@@ -1,7 +1,18 @@
+# Справочный снимок значений из Config.defaults (domain/Models.java).
+# Источник правды для работающего сервера — сам класс и PUT /api/v1/admin/config.
 gameId: balloon
 themes:
-  RED: { levels: 12 }
-  GREEN: { levels: 9 }
+  RED:
+    levels: 12
+    baseHazard: 0.12      # шанс взрыва шара на первом уровне
+    hazardGrowth: 1.115   # во столько раз растёт шанс взрыва с каждым уровнем
+    maxHazard: 0.60       # потолок шанса взрыва
+  GREEN:
+    levels: 9
+    baseHazard: 0.155
+    hazardGrowth: 1.12
+    maxHazard: 0.60
+rtp: 0.96                 # возврат игроку; коэффициент уровня = rtp / шанс долететь до уровня
 pointsPerLevel: 10
 pointsCashoutBonus: 20
-pointsBoosterBonus: 15
+pointsBoosterBonus: 15    # умножается на бустер ставки

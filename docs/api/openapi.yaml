@@ -204,12 +204,28 @@ components:
         theme: { $ref: '#/components/schemas/Theme' }
         betAmount: { type: integer, format: int64 }
         boosterMultiplier: { type: number, format: float, nullable: true }
+        boosterLevel: { type: integer, description: уровень, на котором срабатывает бонус очков }
+        boosterActivated: { type: boolean }
         levels: { type: integer }
         level: { type: integer }
         multiplier: { type: number, format: float }
+        nextMultiplier: { type: number, format: float, description: коэффициент следующего уровня }
+        ladder:
+          type: array
+          description: лестница коэффициентов раунда, индекс равен номеру уровня
+          items: { type: number, format: float }
+        potentialPayout: { type: integer, format: int64, description: выплата при cashout прямо сейчас }
+        cashedOutMultiplier: { type: number, format: float, nullable: true }
         commitment: { type: string }
         points: { type: integer, format: int64 }
         payout: { type: integer, format: int64 }
+        profit: { type: integer, format: int64, description: payout минус ставка, заполняется после завершения }
+        balance: { type: integer, format: int64, description: текущий баланс игрока }
+        balanceAfter: { type: integer, format: int64, description: баланс после денежных операций раунда }
+        popLevel: { type: integer, description: уровень взрыва, раскрывается после завершения раунда }
+        seed: { type: string, description: сид раунда, раскрывается после завершения }
+        createdAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
         serverTime: { type: string, format: date-time }
     CashoutResult:
       type: object
@@ -228,6 +244,12 @@ components:
         commitment: { type: string }
         seed: { type: string, nullable: true }
         configVersion: { type: integer, format: int64 }
+        popLevel: { type: integer, nullable: true }
+        boosterLevel: { type: integer, nullable: true }
+        ladder:
+          type: array
+          items: { type: number, format: float }
+        formula: { type: string, description: формула шанса взрыва для самостоятельной проверки }
     GameConfig:
       type: object
       required: [gameId, version, theme, levels, pointsPerLevel]
@@ -239,6 +261,23 @@ components:
         pointsPerLevel: { type: integer, format: int64, minimum: 0 }
         pointsCashoutBonus: { type: integer, format: int64, minimum: 0 }
         pointsBoosterBonus: { type: integer, format: int64, minimum: 0 }
+        ladder:
+          type: array
+          description: коэффициенты по уровням, индекс равен номеру уровня
+          items: { type: number, format: float }
+        levelTable:
+          type: array
+          items:
+            type: object
+            properties:
+              level: { type: integer }
+              multiplier: { type: number, format: float }
+              popChance: { type: number, format: float, description: вероятность взрыва на этом уровне }
+        maxMultiplier: { type: number, format: float }
+        rtp: { type: number, format: float, description: возврат игроку, одинаков на каждом уровне }
+        baseHazard: { type: number, format: float }
+        hazardGrowth: { type: number, format: float }
+        maxHazard: { type: number, format: float }
         betOptions:
           type: array
           items:

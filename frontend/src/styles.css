@@ -11,3 +11,10 @@
 .brand img{width:112px;height:auto}.brand>span small{font-size:.42rem;letter-spacing:.13em;color:#d8b766;white-space:nowrap}
 
 .brand img{width:140px;height:auto;display:block}.brand span{display:flex;flex-direction:column}.brand span small{font-size:.5rem;letter-spacing:.14em;color:#d8b766;margin-top:4px}
+
+.flight-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 4px}.flight-meta div{background:#f6f8fc;border:1px solid #e6ebf4;border-radius:14px;padding:10px 14px}.flight-meta small{display:block;color:#8b95a8;font-size:.6rem;letter-spacing:.08em;font-weight:800}.flight-meta b{font-size:1.1rem;color:#22304d}
+.history-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.history-summary div{background:#fff;border-radius:16px;padding:14px 18px;box-shadow:0 6px 18px #23304b14}.history-summary small{display:block;color:#8b95a8;font-size:.6rem;letter-spacing:.08em;font-weight:800;margin-bottom:4px}.history-summary b{font-size:1.25rem;color:#22304d}
+.history-table .row{grid-template-columns:1.25fr .95fr .6fr .7fr 1.05fr .8fr .6fr;align-items:center}
+.ladder{margin:22px 0 4px}.ladder-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:10px;flex-wrap:wrap}.ladder-strip{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px}.ladder-step{flex:0 0 auto;min-width:78px;text-align:center;background:linear-gradient(#f8fafd,#eef2f9);border:1px solid #e3e9f3;border-radius:12px;padding:9px 10px}.ladder-step b{display:block;color:#22304d;font-size:.95rem}.ladder-step small{display:block;color:#8b95a8;font-size:.6rem;margin-top:2px}.ladder-step i{display:block;margin-top:4px;font-style:normal;font-size:.6rem;font-weight:800;color:#d08b3c}
+.result-balance{margin-top:14px}.result-numbers{grid-template-columns:repeat(4,1fr)}.result-numbers .win,.result-numbers .crash{font-size:inherit}
+@media(max-width:760px){.history-summary{grid-template-columns:repeat(2,1fr)}.history-table .row{grid-template-columns:1fr 1fr;font-size:.74rem}.flight-meta{grid-template-columns:1fr}.result-numbers{grid-template-columns:repeat(2,1fr);gap:18px}}

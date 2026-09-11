@@ -3,6 +3,18 @@ server:
 spring:
   application:
     name: balloon-backend
+  datasource:
+    url: jdbc:h2:file:./data/balloon;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  h2:
+    console:
+      enabled: false
 management:
   endpoints:
     web:

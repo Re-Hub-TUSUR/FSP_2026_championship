@@ -1,0 +1,34 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api, LeaderRow } from '../../shared/api/client';
+
+const PAGE_SIZE = 8;
+type SortKey = 'points' | 'balance' | 'multiplier' | 'activity';
+const sortLabels: Record<SortKey, string> = { points: 'По очкам', balance: 'По балансу', multiplier: 'По коэффициенту', activity: 'По активности' };
+const initials = (name: string) => name.trim().slice(0, 2).toUpperCase() || '—';
+const number = (value: number) => new Intl.NumberFormat('ru-RU').format(Math.round(value || 0));
+
+function Trend({ value }: { value: number }) { if (!value) return <span className="leader-trend flat">—</span>; return <span className={`leader-trend ${value > 0 ? 'up' : 'down'}`}>{value > 0 ? '↑' : '↓'} {Math.abs(value)}</span>; }
+function PlayerAvatar({ row, place }: { row: LeaderRow; place?: number }) { return <div className={`leader-avatar ${place ? `leader-avatar-${place}` : ''}`} aria-hidden="true">{initials(row.username)}</div>; }
+
+export function Leaderboard() {
+  const [search, setSearch] = useState(''); const [sort, setSort] = useState<SortKey>('points'); const [page, setPage] = useState(1);
+  const q = useQuery({ queryKey: ['leaderboard'], queryFn: api.leaderboard, refetchInterval: 10000, refetchIntervalInBackground: true });
+  const me = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: 60_000, retry: false });
+  useEffect(() => setPage(1), [search, sort]);
+  const filtered = useMemo(() => { const needle = search.trim().toLocaleLowerCase('ru-RU'); const rows = (q.data || []).filter((row) => !needle || row.username.toLocaleLowerCase('ru-RU').includes(needle)); const value = (row: LeaderRow) => sort === 'balance' ? row.balance : sort === 'multiplier' ? row.multiplier : sort === 'activity' ? (row.rounds || 0) : row.points; return [...rows].sort((a, b) => Number(value(b)) - Number(value(a)) || a.username.localeCompare(b.username, 'ru')); }, [q.data, search, sort]);
+  const podium = filtered.slice(0, 3); const listStart = 3 + (page - 1) * PAGE_SIZE; const tableRows = filtered.slice(listStart, listStart + PAGE_SIZE); const pageCount = Math.max(1, Math.ceil(Math.max(0, filtered.length - 3) / PAGE_SIZE));
+  const current = useMemo(() => { if (!me.data || me.data.username === 'Гость') return undefined; return filtered.find((row) => row.id === me.data?.id || row.username === me.data?.username); }, [filtered, me.data]);
+  const updatedLabel = q.dataUpdatedAt ? new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(q.dataUpdatedAt) : '—';
+  return <section className="leader-page">
+    <div className="leader-hero section-title page-title"><div><span className="eyebrow">ЛИГА 100ЛОТО · LIVE-РЕЙТИНГ</span><h1>Лидерборд</h1><p className="muted">Следи за сильнейшими игроками и поднимайся выше с каждым раундом.</p></div><span className="live-pill"><i /> LIVE <small>10 сек</small></span></div>
+    {current && <div className="leader-personal card"><div className="leader-personal-main"><PlayerAvatar row={current}/><div><span className="eyebrow">ТВОЯ ПОЗИЦИЯ</span><strong>#{filtered.indexOf(current) + 1}</strong><small>{current.username}</small></div></div><div className="leader-personal-stat"><small>Очки</small><b>{number(current.points)}</b></div><div className="leader-personal-stat"><small>Уровень</small><b>{current.level}</b></div><div className="leader-personal-stat"><small>Изменение</small><Trend value={current.trend}/></div></div>}
+    <div className="leader-toolbar card"><label className="leader-search"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Найти игрока" aria-label="Найти игрока"/><kbd>⌘ K</kbd></label><div className="leader-controls"><span className="leader-count">{filtered.length} игроков</span><label className="leader-sort"><span>Сортировка</span><select value={sort} onChange={(event) => setSort(event.target.value as SortKey)} aria-label="Сортировка лидерборда">{Object.entries(sortLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div></div>
+    {q.isLoading ? <div className="leader-loading card"><div className="spinner"/><b>Синхронизируем рейтинг</b><span>Получаем свежие результаты игроков…</span></div> : q.isError ? <div className="leader-empty card"><span className="leader-empty-icon">!</span><b>Рейтинг временно недоступен</b><p>Не удалось получить данные с сервера.</p><button className="primary" onClick={() => q.refetch()}>Повторить</button></div> : !filtered.length ? <div className="leader-empty card"><span className="leader-empty-icon">⌕</span><b>{search ? 'Игроки не найдены' : 'Пока нет результатов'}</b><p>{search ? 'Измени запрос и попробуй снова.' : 'Сыграй первый раунд, чтобы попасть в рейтинг.'}</p>{search && <button className="text-button" onClick={() => setSearch('')}>Сбросить поиск</button>}</div> : <>
+      <div className="leader-podium" aria-label="Топ игроков">{podium.map((row, index) => <article className={`podium-card podium-card-${index + 1} ${current?.id === row.id ? 'current' : ''}`} key={row.id}><div className="podium-place">{index + 1}</div><PlayerAvatar row={row} place={index + 1}/><strong>{row.username}</strong><span className="podium-level">Уровень {row.level} · ×{row.multiplier.toFixed(2)}</span><b className="podium-score">{number(row.points)} <small>очков</small></b><Trend value={row.trend}/></article>)}</div>
+      {tableRows.length > 0 && <div className="leader-table card"><div className="leader-table-head"><span>Игрок</span><span>Уровень</span><span>Раунды</span><span>Коэффициент</span><span>Очки</span><span>Динамика</span></div>{tableRows.map((row, index) => { const rank = listStart + index + 1; return <div className={`leader-table-row ${current?.id === row.id ? 'current' : ''}`} key={row.id}><div className="leader-player"><strong className="leader-rank">#{rank}</strong><PlayerAvatar row={row}/><span><b>{row.username}</b>{current?.id === row.id && <small>Это вы</small>}</span></div><span className="leader-level">{row.level}</span><span>{row.rounds || 0}</span><span className="leader-multiplier">×{row.multiplier.toFixed(2)}</span><strong>{number(row.points)}</strong><Trend value={row.trend}/></div>; })}</div>}
+      {pageCount > 1 && <nav className="leader-pagination" aria-label="Страницы лидерборда"><button className="text-button" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>← Назад</button><span>Страница <b>{page}</b> из {pageCount}</span><button className="text-button" disabled={page === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>Вперёд →</button></nav>}
+    </>}
+    <div className="leader-foot"><span><i/> Рейтинг обновляется автоматически</span><span>Обновлено в {updatedLabel}</span></div>
+  </section>;
+}

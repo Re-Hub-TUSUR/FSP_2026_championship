@@ -1,7 +1,9 @@
 import { ENGINE_CONFIG, buildLadder, hazardAt, rollPopLevel } from '../game/engine';
 
 export type Theme = 'RED' | 'GREEN';
-export interface Me { username: string; balance: number; role: string }
+export interface Me { id?: string; username: string; balance: number; role: string; points?: number; level?: number; blocked?: boolean }
+export interface LeaderRow { id: string; username: string; balance: number; rank?: number; level: number; points: number; multiplier: number; trend: number; rounds?: number; cashouts?: number; updatedAt?: string }
+export interface AdminUser { id: string; username: string; role: string; blocked: boolean; balance: number; points: number; level: number; createdAt?: string }
 export interface BetOption { id: string; amount: number; boosterMultiplier: number }
 export interface LevelRow { level: number; multiplier: number; popChance: number }
 export interface GameConfig {
@@ -108,7 +110,8 @@ class ApiError extends Error {
 const isBusinessError = (error: unknown): error is ApiError => error instanceof ApiError && error.status >= 400 && error.status < 500;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) } });
+  const token = localStorage.getItem('balloon-token');
+  const response = await fetch(`${API}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init?.headers || {}) } });
   if (!response.ok) {
     const text = await response.text();
     let message = `HTTP ${response.status}`;
@@ -122,8 +125,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: async (username: string, password: string) => { const result = await request<{token:string; user:Me}>('/auth/login', { method:'POST', body: JSON.stringify({username,password}) }); localStorage.setItem('balloon-token', result.token); window.dispatchEvent(new Event('balloon-auth-changed')); return result.user; },
+  register: async (username: string, password: string) => { const result = await request<Me>('/auth/register', { method:'POST', body: JSON.stringify({username,password}) }); return api.login(username,password).then(() => result); },
+  logout: async () => { try { await request('/auth/logout', { method:'POST' }); } finally { localStorage.removeItem('balloon-token'); window.dispatchEvent(new Event('balloon-auth-changed')); } },
   me: async (): Promise<Me> => {
-    try { return await request<Me>('/me'); } catch { return { username: 'Гость', balance: loadBalance(), role: 'PLAYER' }; }
+    try { return await request<Me>('/me'); } catch (error) {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        localStorage.removeItem('balloon-token');
+        window.dispatchEvent(new Event('balloon-auth-changed'));
+        throw error;
+      }
+      return { username: 'Гость', balance: loadBalance(), role: 'PLAYER' };
+    }
   },
   config: async (theme: Theme): Promise<GameConfig> => {
     try { return await request<GameConfig>(`/game/config?theme=${theme}`); } catch { return demoConfig(theme); }
@@ -136,6 +149,11 @@ export const api = {
       return rows.filter((row) => row.state !== 'STARTED').reverse();
     }
   },
+  leaderboard: async (): Promise<LeaderRow[]> => { const result = await request<{items: LeaderRow[]}>('/leaderboard?limit=100'); return result.items || []; },
+  adminUsers: async (): Promise<AdminUser[]> => request<AdminUser[]>('/admin/users'),
+  adminAudit: async (): Promise<Array<{actor:string; action:string; details:string; createdAt:string}>> => request('/admin/audit'),
+  adminBlock: async (id:string, blocked:boolean, reason:string) => request<AdminUser>(`/admin/users/${id}/${blocked ? 'block' : 'unblock'}`, {method:'POST', body:JSON.stringify({reason})}),
+  adminAdjust: async (id:string, balanceDelta:number, pointsDelta:number, reason:string) => request<AdminUser>(`/admin/users/${id}/adjust`, {method:'POST', body:JSON.stringify({balanceDelta,pointsDelta,reason})}),
   rules: async () => {
     try { return await request<{ title: string; sections: { heading: string; text: string }[] }>('/rules'); } catch {
       return { title: 'Правила игры', sections: [

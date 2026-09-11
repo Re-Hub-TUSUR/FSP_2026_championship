@@ -15,9 +15,11 @@ docker compose -f infra/docker-compose.yml up --build
 - приложение: <http://localhost:3000>
 - API: <http://localhost:8080/api/v1>
 - Swagger UI (если включён backend-профилем): <http://localhost:8080/swagger-ui/index.html>
-- PostgreSQL: `localhost:5432`, база/пользователь/пароль `balloon`/`balloon`/`balloon`
+- аккаунты и игровой баланс: H2 file database в volume `backend-data`; PostgreSQL/Redis остаются подготовленными для следующего production-этапа
 
-MVP хранит состояние раундов и кошелька в памяти Java-сервиса, поэтому запускается без миграций; PostgreSQL и Redis в Compose подготовлены для следующего этапа. Пользователь `demo` используется напрямую и имеет стартовый баланс 1000.
+Игровые раунды живут в памяти Java-сервиса, а аккаунты, роли, баланс, очки и audit log сохраняются в H2 file database. Демо-доступы: `demo/demo123` и `admin/admin123`. Для production H2 заменяется на PostgreSQL без изменения API.
+
+После входа доступны регистрация, защищённый игровой API, live leaderboard (`GET /api/v1/leaderboard`) и админские операции пользователей под ролью `ADMIN`.
 
 ## API в двух командах
 

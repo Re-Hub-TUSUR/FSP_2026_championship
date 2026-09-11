@@ -1,0 +1,15 @@
+package com.example.balloon.api;
+import com.example.balloon.auth.*; import jakarta.validation.Valid; import jakarta.validation.constraints.*; import org.springframework.http.*; import org.springframework.web.bind.annotation.*; import java.util.*;
+@RestController @RequestMapping("/api/v1/admin") @CrossOrigin(origins="*",maxAge=3600)
+public class AdminController {
+ private final AccountService service; public AdminController(AccountService service){this.service=service;}
+ public record ActionRequest(@NotBlank String reason){} public record RoleRequest(@NotBlank String role,@NotBlank String reason){} public record AdjustRequest(long balanceDelta,long pointsDelta,@NotBlank String reason){}
+ @GetMapping("/users") public ResponseEntity<?> users(@RequestHeader("Authorization") String auth){try{service.requireAdmin(auth);return ResponseEntity.ok(service.all().stream().map(AuthController::profile).toList());}catch(Exception e){return error(e);}}
+ @GetMapping("/users/{id}") public ResponseEntity<?> user(@RequestHeader("Authorization") String auth,@PathVariable String id){try{service.requireAdmin(auth);return ResponseEntity.ok(AuthController.profile(service.byId(id)));}catch(Exception e){return error(e);}}
+ @PostMapping("/users/{id}/block") public ResponseEntity<?> block(@RequestHeader("Authorization") String auth,@PathVariable String id,@Valid @RequestBody ActionRequest req){try{AccountEntity actor=service.requireAdmin(auth);return ResponseEntity.ok(AuthController.profile(service.setBlocked(id,true,actor.getUsername(),req.reason())));}catch(Exception e){return error(e);}}
+ @PostMapping("/users/{id}/unblock") public ResponseEntity<?> unblock(@RequestHeader("Authorization") String auth,@PathVariable String id,@Valid @RequestBody ActionRequest req){try{AccountEntity actor=service.requireAdmin(auth);return ResponseEntity.ok(AuthController.profile(service.setBlocked(id,false,actor.getUsername(),req.reason())));}catch(Exception e){return error(e);}}
+ @PutMapping("/users/{id}/role") public ResponseEntity<?> role(@RequestHeader("Authorization") String auth,@PathVariable String id,@Valid @RequestBody RoleRequest req){try{AccountEntity actor=service.requireAdmin(auth);return ResponseEntity.ok(AuthController.profile(service.setRole(id,req.role(),actor.getUsername(),req.reason())));}catch(Exception e){return error(e);}}
+ @PostMapping("/users/{id}/adjust") public ResponseEntity<?> adjust(@RequestHeader("Authorization") String auth,@PathVariable String id,@Valid @RequestBody AdjustRequest req){try{AccountEntity actor=service.requireAdmin(auth);return ResponseEntity.ok(AuthController.profile(service.adjust(id,req.balanceDelta(),req.pointsDelta(),actor.getUsername(),req.reason())));}catch(Exception e){return error(e);}}
+ @GetMapping("/audit") public ResponseEntity<?> audit(@RequestHeader("Authorization") String auth){try{service.requireAdmin(auth);return ResponseEntity.ok(service.audit());}catch(Exception e){return error(e);}}
+ private ResponseEntity<Map<String,String>> error(Exception e){return ResponseEntity.status(e instanceof SecurityException?403:400).body(Map.of("error",e.getMessage()==null?"Request failed":e.getMessage()));}
+}

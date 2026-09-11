@@ -1,6 +1,7 @@
 package com.example.balloon.application;
 
 import com.example.balloon.domain.Models.*;
+import com.example.balloon.auth.AccountService;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
@@ -27,11 +28,13 @@ public class GameService {
   private final Map<String, ScheduledFuture<?>> tickers = new ConcurrentHashMap<>();
   private final ScheduledExecutorService scheduler;
   private final SecureRandom random = new SecureRandom();
+  private final AccountService accounts;
 
   private final Object wallet = new Object();
   private long balance = START_BALANCE;
 
-  public GameService() {
+  public GameService(AccountService accounts) {
+    this.accounts = accounts;
     configs.put(Theme.RED, Config.defaults(Theme.RED));
     configs.put(Theme.GREEN, Config.defaults(Theme.GREEN));
     scheduler = Executors.newScheduledThreadPool(4, r -> {
@@ -43,13 +46,15 @@ public class GameService {
 
   public Config config(Theme theme) { return configs.get(theme); }
 
-  public long balance() { synchronized (wallet) { return balance; } }
+  public long balance() { synchronized (wallet) { try { return accounts.byUsername("demo").getBalance(); } catch (Exception ignored) { return balance; } } }
 
   public Round start(String user, Theme theme, String betOption) {
     Config config = Optional.ofNullable(config(theme)).orElseThrow(() -> new IllegalArgumentException("Неизвестная тема"));
     int index = optionIndex(betOption, config.bets().length);
     long bet = config.bets()[index];
-    long balanceAfterBet = debit(bet);
+    long balanceAfterBet;
+    try { balanceAfterBet = accounts.debit(user, bet).getBalance(); }
+    catch (NoSuchElementException e) { balanceAfterBet = debit(bet); }
 
     String id = UUID.randomUUID().toString();
     String seed = randomSeed();
@@ -98,6 +103,9 @@ public class GameService {
         .sorted(Comparator.comparing((Round r) -> r.startedAt).reversed())
         .toList();
   }
+
+  /** Live authoritative snapshot used by leaderboard polling. */
+  public List<Round> allRounds() { return List.copyOf(rounds.values()); }
 
   public Config updateConfig(Theme theme, Config request) {
     Config current = config(theme);
@@ -156,14 +164,19 @@ public class GameService {
     round.cashedOutMultiplier = round.multiplier;
     round.payout = Math.max(1, Math.round(round.betAmount * round.multiplier));
     round.points += round.config.pointsCashoutBonus();
-    credit(round.payout);
+    try { accounts.credit(round.userId, round.payout); accounts.addPoints(round.userId, round.points); }
+    catch (NoSuchElementException e) { credit(round.payout); }
     finish(round, state);
   }
 
   private void finish(Round round, RoundState state) {
     round.state = state;
     round.endedAt = Instant.now();
-    round.balanceAfter = balance();
+    if (state == RoundState.CRASHED) {
+      try { accounts.addPoints(round.userId, round.points); } catch (Exception ignored) { /* demo fallback */ }
+    }
+    try { round.balanceAfter = accounts.byUsername(round.userId).getBalance(); }
+    catch (Exception ignored) { round.balanceAfter = balance(); }
     stopTicker(round.id);
   }
 

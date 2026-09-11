@@ -34,9 +34,6 @@ services:
       dockerfile: Dockerfile
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/balloon
-      SPRING_DATASOURCE_USERNAME: balloon
-      SPRING_DATASOURCE_PASSWORD: balloon
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SERVER_PORT: 8080
@@ -47,6 +44,8 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
+    volumes:
+      - backend-data:/app/data
 
   frontend:
     build:
@@ -60,3 +59,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  backend-data:

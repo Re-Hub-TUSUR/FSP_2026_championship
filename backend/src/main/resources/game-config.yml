@@ -1,0 +1,7 @@
+gameId: balloon
+themes:
+  RED: { levels: 12 }
+  GREEN: { levels: 9 }
+pointsPerLevel: 10
+pointsCashoutBonus: 20
+pointsBoosterBonus: 15

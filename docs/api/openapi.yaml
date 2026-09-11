@@ -1,0 +1,259 @@
+openapi: 3.0.3
+info:
+  title: Balloon Game API
+  version: 1.0.0
+  description: MVP REST contract for the «Воздушный шар» game.
+servers:
+  - url: http://localhost:8080/api/v1
+tags:
+  - name: player
+  - name: rounds
+  - name: admin
+paths:
+  /me:
+    get:
+      tags: [player]
+      summary: Current profile and bonus balance
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+  /game/config:
+    get:
+      tags: [player]
+      summary: Public game configuration for a theme
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: theme
+          required: true
+          schema: { $ref: '#/components/schemas/Theme' }
+      responses:
+        '200':
+          description: Theme configuration
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameConfig' }
+  /rounds:
+    post:
+      tags: [rounds]
+      summary: Start a round and debit the selected bet
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartRoundRequest' }
+      responses:
+        '201':
+          description: Started round
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Round' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /rounds/history:
+    get:
+      tags: [rounds]
+      summary: Completed round history
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: History
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Round' }
+  /rounds/{roundId}:
+    get:
+      tags: [rounds]
+      summary: Authoritative current state
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RoundId' }]
+      responses:
+        '200':
+          description: Round state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Round' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /rounds/{roundId}/cashout:
+    post:
+      tags: [rounds]
+      summary: Cash out at the server multiplier
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RoundId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Accepted cashout
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashoutResult' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /rounds/{roundId}/proof:
+    get:
+      tags: [rounds]
+      summary: Fairness commitment and revealed seed after settlement
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RoundId' }]
+      responses:
+        '200':
+          description: Round proof (seed may be omitted before settlement)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Proof' }
+  /rules:
+    get:
+      tags: [player]
+      summary: Human-readable game rules
+      responses:
+        '200':
+          description: Rules
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /admin/config:
+    get:
+      tags: [admin]
+      summary: Get active configuration
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Active configuration
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameConfig' }
+    put:
+      tags: [admin]
+      summary: Publish a validated configuration version
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GameConfig' }
+      responses:
+        '200':
+          description: New active configuration
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameConfig' }
+        '422': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RoundId:
+      in: path
+      name: roundId
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128 }
+  responses:
+    Problem:
+      description: RFC 7807 error
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Theme:
+      type: string
+      enum: [RED, GREEN]
+    RoundState:
+      type: string
+      enum: [CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED]
+    Me:
+      type: object
+      required: [userId, username, role, balance]
+      properties:
+        userId: { type: string }
+        username: { type: string }
+        role: { type: string, enum: [PLAYER, ADMIN] }
+        balance: { type: integer, format: int64, minimum: 0 }
+    StartRoundRequest:
+      type: object
+      required: [theme, betOptionId]
+      properties:
+        theme: { $ref: '#/components/schemas/Theme' }
+        betOptionId: { type: string }
+    Round:
+      type: object
+      required: [roundId, state, theme, betAmount, levels, multiplier]
+      properties:
+        roundId: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/RoundState' }
+        theme: { $ref: '#/components/schemas/Theme' }
+        betAmount: { type: integer, format: int64 }
+        boosterMultiplier: { type: number, format: float, nullable: true }
+        levels: { type: integer }
+        level: { type: integer }
+        multiplier: { type: number, format: float }
+        commitment: { type: string }
+        points: { type: integer, format: int64 }
+        payout: { type: integer, format: int64 }
+        serverTime: { type: string, format: date-time }
+    CashoutResult:
+      type: object
+      required: [roundId, state, multiplier, payout]
+      properties:
+        roundId: { type: string, format: uuid }
+        state: { $ref: '#/components/schemas/RoundState' }
+        multiplier: { type: number, format: float }
+        payout: { type: integer, format: int64 }
+        points: { type: integer, format: int64 }
+    Proof:
+      type: object
+      required: [roundId, commitment]
+      properties:
+        roundId: { type: string, format: uuid }
+        commitment: { type: string }
+        seed: { type: string, nullable: true }
+        configVersion: { type: integer, format: int64 }
+    GameConfig:
+      type: object
+      required: [gameId, version, theme, levels, pointsPerLevel]
+      properties:
+        gameId: { type: string }
+        version: { type: integer, format: int64 }
+        theme: { $ref: '#/components/schemas/Theme' }
+        levels: { type: integer, minimum: 1 }
+        pointsPerLevel: { type: integer, format: int64, minimum: 0 }
+        pointsCashoutBonus: { type: integer, format: int64, minimum: 0 }
+        pointsBoosterBonus: { type: integer, format: int64, minimum: 0 }
+        betOptions:
+          type: array
+          items:
+            type: object
+            required: [id, amount, boosterMultiplier]
+            properties:
+              id: { type: string }
+              amount: { type: integer, format: int64, minimum: 1 }
+              boosterMultiplier: { type: number, format: float, minimum: 1 }
+    Problem:
+      type: object
+      required: [type, title, status, detail, requestId]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        requestId: { type: string }

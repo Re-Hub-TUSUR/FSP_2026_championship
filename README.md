@@ -110,6 +110,7 @@ curl -X POST http://localhost:8080/api/v1/rounds/<ROUND_ID>/cashout \
 | Метод | Путь | Назначение |
 | --- | --- | --- |
 | `POST` | `/auth/register`, `/auth/login`, `/auth/logout` | Аккаунты и сессии |
+| `POST` | `/auth/topup` | Демо-пополнение баланса на 500 бонусов для текущего пользователя |
 | `GET` | `/me` | Профиль, баланс, роль |
 | `GET` | `/game/config?theme=RED\|GREEN` | Публичные параметры темы и лестница коэффициентов |
 | `POST` | `/rounds`, `/rounds/{id}/cashout` | Старт раунда и cashout |

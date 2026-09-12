@@ -133,6 +133,7 @@ curl -X POST http://localhost:8080/api/v1/rounds/<ROUND_ID>/cashout \
 | `GET` | `/rounds/{id}`, `/rounds/{id}/proof` | Состояние и проверка честности собственного раунда (Bearer + владелец; чужой/неизвестный ID — `404`) |
 | `GET` | `/rounds/history` | Общая публичная обезличенная история завершённых раундов |
 | `GET` | `/leaderboard` | Рейтинг участников |
+| `GET` | `/tournament` | Текущий турнир: срок, статус и призы для топ-3 |
 | `GET`/`POST` | `/lottery`, `/lottery/buy` | Каталог билетов и покупка набора |
 | `GET`/`POST` | `/lottery/offer/{roundId}`, `/lottery/offer/accept` | Персональное предложение «Закрепи успех» и его покупка (Bearer + владелец; чужой/неизвестный ID — `404`) |
 | `GET`/`PUT` | `/admin/config` | Чтение и публикация настроек темы (только `ADMIN`) |

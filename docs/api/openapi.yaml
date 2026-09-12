@@ -311,6 +311,17 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/LeaderboardResponse' }
+  /tournament:
+    get:
+      tags: [player]
+      summary: Текущий турнир и призовой фонд
+      description: Публичный снимок текущего 14-дневного турнира. После завершения при первом запросе сервис начисляет призы трём лидерам рейтинга.
+      responses:
+        '200':
+          description: Состояние турнира
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tournament' }
   /lottery:
     get:
       tags: [lottery]
@@ -896,6 +907,17 @@ components:
         cashouts: { type: integer }
         trend: { type: integer, format: int64 }
         updatedAt: { type: string, format: date-time }
+    Tournament:
+      type: object
+      required: [startedAt, endsAt, active, firstPrize, secondPrize, thirdPrize, prizesPaid]
+      properties:
+        startedAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        active: { type: boolean }
+        firstPrize: { type: integer, format: int64, minimum: 0 }
+        secondPrize: { type: integer, format: int64, minimum: 0 }
+        thirdPrize: { type: integer, format: int64, minimum: 0 }
+        prizesPaid: { type: boolean }
     LotteryCatalog:
       type: object
       required: [tickets, balance, ticketPrice, packs]

@@ -9,9 +9,9 @@ import { Result } from '../features/game/Result';
 import { History } from '../features/history/History';
 import { Rules } from '../features/history/Rules';
 import { Admin } from '../features/admin/Admin';
-import { Auth } from '../features/auth/Auth';
 import { Leaderboard } from '../features/leaderboard/Leaderboard';
 import { Profile } from '../features/profile/Profile';
+import { Landing } from '../features/landing/Landing';
 
 function Header() {
   const queryClient = useQueryClient();
@@ -25,7 +25,8 @@ function Header() {
   }, []);
   const { data } = useQuery({ queryKey: ['me'], queryFn: api.me, refetchInterval: 3000, enabled: Boolean(token) });
   const location = useLocation();
-  const logout = async () => { try { await api.logout(); } catch { /* сервер может быть недоступен — локальная сессия всё равно закрывается */ } finally { queryClient.clear(); setToken(null); nav('/login', { replace: true }); } };
+  if (location.pathname === '/') return null;
+  const logout = async () => { try { await api.logout(); } catch { /* сервер может быть недоступен — локальная сессия всё равно закрывается */ } finally { queryClient.clear(); setToken(null); nav('/', { replace: true }); } };
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -62,17 +63,14 @@ function Header() {
   );
 }
 function RequireAuth({ children }: { children: ReactNode }) {
-  return localStorage.getItem('balloon-token') ? children : <Navigate to="/register" replace />;
-}
-function GuestOnly({ children }: { children: ReactNode }) {
-  return localStorage.getItem('balloon-token') ? <Navigate to="/play" replace /> : children;
+  return localStorage.getItem('balloon-token') ? children : <Navigate to="/" replace />;
 }
 function RequireAdmin({ children }: { children: ReactNode }) {
   const token = localStorage.getItem('balloon-token');
   const { data, isLoading } = useQuery({ queryKey: ['me'], queryFn: api.me, enabled: Boolean(token) });
-  if (!token) return <Navigate to="/register" replace />;
+  if (!token) return <Navigate to="/" replace />;
   if (isLoading) return <div className="card loading"><div className="spinner" />Проверяем доступ…</div>;
   return data?.role === 'ADMIN' ? children : <Navigate to="/play" replace />;
 }
 
-export default function App() { return <div className="app"><Header /><main className="page"><Routes><Route path="/" element={<Navigate to="/register" replace />} /><Route path="/login" element={<GuestOnly><Auth mode="login" /></GuestOnly>} /><Route path="/register" element={<GuestOnly><Auth mode="register" /></GuestOnly>} /><Route path="/play" element={<RequireAuth><Play /></RequireAuth>} /><Route path="/round/:id" element={<RequireAuth><RoundView /></RequireAuth>} /><Route path="/round/:id/result" element={<RequireAuth><Result /></RequireAuth>} /><Route path="/leaderboard" element={<RequireAuth><Leaderboard /></RequireAuth>} /><Route path="/history" element={<RequireAuth><History /></RequireAuth>} /><Route path="/rules" element={<RequireAuth><Rules /></RequireAuth>} /><Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} /><Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} /><Route path="*" element={<Navigate to="/register" replace />} /></Routes></main><footer>100ЛОТО · Игра с виртуальными очками <span>•</span> Версия 1.0</footer></div> }
+export default function App() { const location = useLocation(); return <div className="app"><Header /><main className={location.pathname === '/' ? 'landing-page-wrap' : 'page'}><Routes><Route path="/" element={<Landing />} /><Route path="/login" element={<Navigate to="/" replace />} /><Route path="/register" element={<Navigate to="/" replace />} /><Route path="/play" element={<RequireAuth><Play /></RequireAuth>} /><Route path="/round/:id" element={<RequireAuth><RoundView /></RequireAuth>} /><Route path="/round/:id/result" element={<RequireAuth><Result /></RequireAuth>} /><Route path="/leaderboard" element={<RequireAuth><Leaderboard /></RequireAuth>} /><Route path="/history" element={<RequireAuth><History /></RequireAuth>} /><Route path="/rules" element={<RequireAuth><Rules /></RequireAuth>} /><Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} /><Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></main>{location.pathname !== '/' && <footer>100ЛОТО · Игра с виртуальными очками <span>•</span> Версия 1.0</footer>}</div> }

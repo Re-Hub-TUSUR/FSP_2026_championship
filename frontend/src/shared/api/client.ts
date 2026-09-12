@@ -187,8 +187,9 @@ export const api = {
         window.dispatchEvent(new Event('balloon-auth-changed'));
         throw error;
       }
+      const localToken = localStorage.getItem('balloon-token');
       return {
-        username: 'Гость', balance: loadBalance(), role: 'PLAYER',
+        username: localToken === 'demo-admin' ? 'admin' : localToken === 'demo-demo' ? 'demo' : 'Гость', balance: localToken === 'demo-demo' ? 500 : loadBalance(), role: localToken === 'demo-admin' ? 'ADMIN' : 'PLAYER',
         puzzleMask: Number(localStorage.getItem(puzzleKey) || 0),
         puzzleFragments: PUZZLE_FRAGMENTS, puzzleBonus: PUZZLE_BONUS
       };

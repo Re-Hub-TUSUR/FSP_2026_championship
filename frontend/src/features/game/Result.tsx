@@ -22,6 +22,7 @@ export function Result() {
       return;
     }
     client.invalidateQueries({ queryKey: ['me'] });
+    client.invalidateQueries({ queryKey: ['daily-bonus'] });
     client.invalidateQueries({ queryKey: ['history'] });
     client.invalidateQueries({ queryKey: ['crashes'] });
   }, [round?.state, id, nav, client]);
@@ -72,6 +73,7 @@ export function Result() {
     </div>
 
     {round.reward && <PuzzleReward reward={round.reward} />}
+    {round.reward?.ticketEligible && <p className="daily-ticket-earned">Ежедневный билет доступен в шапке — сотрите его и узнайте награду.</p>}
 
     {potentialMax > 0 && <p className={`result-potential ${missed ? 'missed' : ''}`}>
       Могли выиграть: <b>{potentialMax} ★</b> — шар лопнул на уровне {round.popLevel ?? round.level + 1} из {round.levels}

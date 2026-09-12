@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../shared/api/client';
+import { api, normalizeDailyBonus } from '../../shared/api/client';
 import { fragmentArt } from '../game/PuzzleReward';
 
 export function Profile() {
@@ -7,9 +7,10 @@ export function Profile() {
   if (isLoading || !data) return <div className="card loading"><div className="spinner" />Загрузка профиля…</div>;
 
   const total = data.puzzleFragments ?? 6;
-  const mask = data.puzzleMask ?? 0;
+  const daily = normalizeDailyBonus(data.dailyBonus);
+  const mask = daily?.puzzleMask ?? data.puzzleMask ?? 0;
   const collected = Array.from({ length: total }, (_, i) => (mask & (1 << i)) !== 0);
-  const collectedCount = collected.filter(Boolean).length;
+  const collectedCount = daily?.collected ?? collected.filter(Boolean).length;
 
   return <section className="profile-grid">
     <div className="card profile-hero">
@@ -24,17 +25,17 @@ export function Profile() {
 
     <div className="card stat-card"><small>ТЕКУЩИЙ БАЛАНС</small><strong>{data.balance.toLocaleString('ru-RU')} <i>★</i></strong></div>
     <div className="card stat-card"><small>ОЧКИ</small><strong>{(data.points ?? 0).toLocaleString('ru-RU')}</strong><span className="muted">уровень {data.level || 1}</span></div>
-    <div className="card stat-card"><small>СОБРАНО ПАЗЛОВ</small><strong>{data.puzzlesCompleted ?? 0}</strong><span className="muted">бонус {data.puzzleBonus ?? 250} ★ за каждый</span></div>
+    <div className="card stat-card"><small>ЕЖЕДНЕВНЫЙ БИЛЕТ</small><strong>{daily?.claimed ? 'Получен' : daily?.ticketAvailable ? 'Готов' : 'В пути'}</strong><span className="muted">награда от 10 до 2 000 ★</span></div>
 
     <div className="card puzzle-card">
       <div className="section-title">
-        <div><span className="eyebrow">КОЛЛЕКЦИЯ</span><h2>Текущий пазл</h2></div>
+        <div><span className="eyebrow">ЕЖЕДНЕВНАЯ КОЛЛЕКЦИЯ</span><h2>Пазл на сегодня</h2></div>
         <span className="muted">{collectedCount} из {total}</span>
       </div>
-      <p className="muted">За каждый завершённый раунд выдаётся случайный недостающий фрагмент. Соберите все — и получите {data.puzzleBonus ?? 250} бонусных баллов.</p>
+      <p className="muted">За каждый завершённый раунд выдаётся случайный недостающий фрагмент. Соберите все до конца дня — откроется лотерейный билет с наградой от 10 до 2 000 бонусов.</p>
       <div className="puzzle-collection">
         {collected.map((has, index) => <div key={index} className={`puzzle-slot ${has ? 'has' : ''}`}>
-          <img src={fragmentArt(index)} alt={`Фрагмент ${index + 1}`} />
+          <img src={has ? '/assets/daily-puzzle.png' : fragmentArt(index)} alt={`Фрагмент ${index + 1}`} />
           <small>{index + 1}</small>
         </div>)}
       </div>

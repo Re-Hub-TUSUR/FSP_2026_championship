@@ -1,8 +1,24 @@
 import { ENGINE_CONFIG, boosterAppearChance, buildLadder, hazardAt, ladderForBooster, rollPopLevel } from '../game/engine';
 
 export type Theme = 'RED' | 'GREEN';
-export interface Me { id?: string; username: string; balance: number; role: string; points?: number; level?: number; blocked?: boolean; puzzleMask?: number; puzzleFragments?: number; puzzleBonus?: number; puzzlesCompleted?: number }
-export interface PuzzleAward { fragment: number; collected: number; total: number; completed: boolean; bonus: number }
+export interface Me { id?: string; username: string; balance: number; role: string; points?: number; level?: number; blocked?: boolean; puzzleMask?: number; puzzleFragments?: number; puzzleBonus?: number; puzzlesCompleted?: number; dailyBonus?: DailyBonusState }
+export interface PuzzleAward { fragment: number; collected: number; total: number; completed: boolean; bonus: number; ticketEligible?: boolean }
+/** Состояние пазла и лотерейного билета за текущий календарный день. */
+export interface DailyBonusState {
+  day: string;
+  collected: number;
+  total: number;
+  eligible: boolean;
+  ticketAvailable: boolean;
+  claimed: boolean;
+  reward: number | null;
+  /** Optional server fields retained for richer UI and forward compatibility. */
+  puzzleMask?: number;
+  ticketState?: 'LOCKED' | 'AVAILABLE' | 'SCRATCHED' | string;
+  balance?: number;
+  balanceAfter?: number;
+  nextResetAt?: string;
+}
 export interface LeaderRow { id: string; username: string; balance: number; rank?: number; level: number; points: number; multiplier: number; trend: number; rounds?: number; cashouts?: number; updatedAt?: string }
 export interface AdminUser { id: string; username: string; role: string; blocked: boolean; balance: number; points: number; level: number; createdAt?: string }
 export interface BetOption { id: string; amount: number; boosterMultiplier: number; boosterChance?: number; ladder?: number[] }
@@ -36,8 +52,10 @@ const LEVEL_DURATION_MS = 1000;
 const roundsKey = 'balloon-demo-rounds';
 const balanceKey = 'balloon-demo-balance';
 const puzzleKey = 'balloon-demo-puzzle';
+const dailyBonusKey = 'balloon-demo-daily-bonus';
 const PUZZLE_FRAGMENTS = 6;
-const PUZZLE_BONUS = 250;
+/** 0.001% в вероятностной записи (один шанс из ста тысяч). */
+export const DAILY_JACKPOT_CHANCE = 0.00001;
 
 type DemoRound = Round & { popLevel: number; ladder: number[]; boosterLevel: number; startedAtMs: number };
 
@@ -46,20 +64,151 @@ const saveRounds = (rows: DemoRound[]) => localStorage.setItem(roundsKey, JSON.s
 const loadBalance = () => Number(localStorage.getItem(balanceKey) ?? START_BALANCE);
 const saveBalance = (value: number) => { localStorage.setItem(balanceKey, String(value)); return value; };
 
-/** Демо-версия награды: случайный недостающий фрагмент, бонус за собранный пазл. */
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const numberField = (value: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) return candidate;
+    if (typeof candidate === 'string' && candidate.trim() !== '' && Number.isFinite(Number(candidate))) return Number(candidate);
+  }
+  return undefined;
+};
+const booleanField = (value: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === 'boolean') return candidate;
+    if (candidate === 'true' || candidate === '1') return true;
+    if (candidate === 'false' || candidate === '0') return false;
+  }
+  return undefined;
+};
+
+const localDay = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+const nextLocalMidnight = () => {
+  const next = new Date();
+  next.setHours(24, 0, 0, 0);
+  return next.toISOString();
+};
+
+/**
+ * Приводит ответы разных версий API к одному клиентскому контракту. Серверная
+ * версия может вернуть состояние как напрямую, так и внутри `dailyBonus`.
+ */
+export function normalizeDailyBonus(value: unknown, fallback?: Partial<DailyBonusState>): DailyBonusState | null {
+  const source = isRecord(value) && isRecord(value.dailyBonus) ? value.dailyBonus : value;
+  if (!isRecord(source)) return null;
+  const ticketObject = isRecord(source.ticket) ? source.ticket : undefined;
+  const ticketStateValue = source.ticketState ?? ticketObject?.state;
+  const ticketState = typeof ticketStateValue === 'string' ? ticketStateValue.toUpperCase() : undefined;
+  const mask = numberField(source, 'puzzleMask', 'mask');
+  const total = Math.max(1, Math.round(numberField(source, 'total', 'required', 'puzzleFragments') ?? fallback?.total ?? PUZZLE_FRAGMENTS));
+  const collectedFromMask = mask === undefined ? undefined : Math.max(0, Math.min(total, bitCount(Math.round(mask))));
+  const progressValue = numberField(source, 'collected', 'progress', 'collectedCount', 'puzzleCollected');
+  const collected = Math.max(0, Math.min(total, Math.round(progressValue ?? collectedFromMask ?? fallback?.collected ?? 0)));
+  const rewardValue = numberField(source, 'reward', 'rewardAmount', 'bonus', 'amount') ?? (ticketObject ? numberField(ticketObject, 'reward', 'rewardAmount', 'bonus', 'amount') : undefined);
+  const stateImpliesClaimed = ticketState === 'SCRATCHED' || ticketState === 'CLAIMED';
+  const claimed = booleanField(source, 'claimed', 'ticketClaimed', 'scratched', 'used')
+    ?? (stateImpliesClaimed ? true : fallback?.claimed ?? false);
+  const eligible = booleanField(source, 'eligible', 'canClaim', 'ready', 'completed') ?? (collected >= total);
+  const ticketAvailable = booleanField(source, 'ticketAvailable', 'hasTicket')
+    ?? (ticketState === 'AVAILABLE' || ticketState === 'READY' ? true : undefined)
+    ?? (eligible && !claimed);
+  const dayValue = source.day ?? source.date ?? source.dayKey ?? source.period;
+  const day = typeof dayValue === 'string' && dayValue.trim() ? dayValue : (fallback?.day ?? localDay());
+  const reset = source.nextResetAt ?? source.resetAt ?? source.expiresAt;
+  const currentBalance = numberField(source, 'balance') ?? (ticketObject ? numberField(ticketObject, 'balance') : undefined);
+  const balanceAfter = numberField(source, 'balanceAfter') ?? (ticketObject ? numberField(ticketObject, 'balanceAfter') : undefined);
+  return {
+    day,
+    collected,
+    total,
+    eligible,
+    ticketAvailable: ticketAvailable && !claimed,
+    claimed,
+    reward: rewardValue === undefined ? (fallback?.reward ?? null) : Math.max(0, Math.round(rewardValue)),
+    ...(mask === undefined ? {} : { puzzleMask: Math.round(mask) }),
+    ...(ticketState ? { ticketState } : {}),
+    ...(currentBalance === undefined ? {} : { balance: currentBalance }),
+    ...(balanceAfter === undefined ? {} : { balanceAfter }),
+    ...(typeof reset === 'string' ? { nextResetAt: reset } : fallback?.nextResetAt ? { nextResetAt: fallback.nextResetAt } : {})
+  };
+}
+
+const bitCount = (value: number) => {
+  let n = value >>> 0;
+  let count = 0;
+  while (n) { n &= n - 1; count += 1; }
+  return count;
+};
+
+const demoDailyState = (): DailyBonusState => {
+  const today = localDay();
+  let saved: Partial<DailyBonusState> = {};
+  try { saved = JSON.parse(localStorage.getItem(dailyBonusKey) || '{}') as Partial<DailyBonusState>; } catch { saved = {}; }
+  if (saved.day !== today) {
+    saved = { day: today, collected: 0, total: PUZZLE_FRAGMENTS, eligible: false, ticketAvailable: false, claimed: false, reward: null, puzzleMask: 0 };
+    // The daily collection starts from zero at the local calendar boundary.
+    localStorage.setItem(puzzleKey, '0');
+  }
+  const total = Math.max(1, saved.total ?? PUZZLE_FRAGMENTS);
+  const collected = Math.max(0, Math.min(total, saved.collected ?? 0));
+  const eligible = Boolean(saved.eligible) || collected >= total;
+  const claimed = Boolean(saved.claimed);
+  const state: DailyBonusState = {
+    day: today,
+    collected,
+    total,
+    eligible,
+    ticketAvailable: eligible && !claimed,
+    claimed,
+    reward: typeof saved.reward === 'number' ? saved.reward : null,
+    puzzleMask: typeof saved.puzzleMask === 'number' ? saved.puzzleMask : Number(localStorage.getItem(puzzleKey) || 0),
+    nextResetAt: nextLocalMidnight()
+  };
+  localStorage.setItem(dailyBonusKey, JSON.stringify(state));
+  return state;
+};
+const saveDemoDaily = (state: DailyBonusState) => { localStorage.setItem(dailyBonusKey, JSON.stringify(state)); return state; };
+
+/** Локальный fallback для запуска frontend без backend. */
+function demoDailyClaim(): DailyBonusState {
+  const state = demoDailyState();
+  if (!state.eligible) throw new Error('Сначала соберите все фрагменты пазла');
+  if (state.claimed) return state;
+  // Джекпот отделён явно, чтобы его шанс нельзя было случайно изменить.
+  // Остальные целые суммы диапазона 10..1999 доступны равномерно.
+  const reward = Math.random() < DAILY_JACKPOT_CHANCE
+    ? 2000
+    : 10 + Math.floor(Math.random() * 1990);
+  saveBalance(loadBalance() + reward);
+  return saveDemoDaily({ ...state, claimed: true, ticketAvailable: false, reward });
+}
+
+/** Демо-версия награды: случайный недостающий фрагмент и билет после полного пазла. */
 function awardFragment(): PuzzleAward {
-  let mask = Number(localStorage.getItem(puzzleKey) || 0);
+  const daily = demoDailyState();
+  let mask = daily.puzzleMask ?? Number(localStorage.getItem(puzzleKey) || 0);
   const missing = Array.from({ length: PUZZLE_FRAGMENTS }, (_, i) => i).filter((i) => (mask & (1 << i)) === 0);
+  if (missing.length === 0) return { fragment: PUZZLE_FRAGMENTS - 1, collected: PUZZLE_FRAGMENTS, total: PUZZLE_FRAGMENTS, completed: true, bonus: 0, ticketEligible: true };
   const fragment = missing[Math.floor(Math.random() * missing.length)];
   mask |= 1 << fragment;
   const collected = Array.from({ length: PUZZLE_FRAGMENTS }, (_, i) => (mask & (1 << i)) !== 0).filter(Boolean).length;
   const completed = collected === PUZZLE_FRAGMENTS;
-  if (completed) {
-    saveBalance(loadBalance() + PUZZLE_BONUS);
-    mask = 0;
-  }
   localStorage.setItem(puzzleKey, String(mask));
-  return { fragment, collected, total: PUZZLE_FRAGMENTS, completed, bonus: completed ? PUZZLE_BONUS : 0 };
+  saveDemoDaily({
+    ...daily,
+    collected,
+    total: PUZZLE_FRAGMENTS,
+    puzzleMask: mask,
+    eligible: completed || daily.eligible,
+    ticketAvailable: completed || daily.ticketAvailable,
+    claimed: daily.claimed,
+    reward: daily.reward
+  });
+  return { fragment, collected, total: PUZZLE_FRAGMENTS, completed, bonus: 0, ticketEligible: completed };
 }
 
 function demoConfig(theme: Theme): GameConfig {
@@ -160,6 +309,8 @@ class ApiError extends Error {
 
 /** Ошибка бизнес-правила от сервера: её нужно показать игроку, а не уходить в демо-режим. */
 const isBusinessError = (error: unknown): error is ApiError => error instanceof ApiError && error.status >= 400 && error.status < 500;
+/** Fetch throws TypeError when the optional local backend is genuinely unavailable. */
+const isNetworkError = (error: unknown): error is TypeError => error instanceof TypeError;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem('balloon-token');
@@ -181,7 +332,11 @@ export const api = {
   register: async (username: string, password: string) => { const result = await request<Me>('/auth/register', { method:'POST', body: JSON.stringify({username,password}) }); return api.login(username,password).then(() => result); },
   logout: async () => { try { await request('/auth/logout', { method:'POST' }); } finally { localStorage.removeItem('balloon-token'); window.dispatchEvent(new Event('balloon-auth-changed')); } },
   me: async (): Promise<Me> => {
-    try { return await request<Me>('/me'); } catch (error) {
+    try {
+      const profile = await request<Me>('/me');
+      const daily = normalizeDailyBonus(profile);
+      return daily ? { ...profile, dailyBonus: daily, puzzleMask: daily.puzzleMask ?? profile.puzzleMask, puzzleFragments: daily.total } : profile;
+    } catch (error) {
       if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
         localStorage.removeItem('balloon-token');
         window.dispatchEvent(new Event('balloon-auth-changed'));
@@ -190,8 +345,53 @@ export const api = {
       return {
         username: 'Гость', balance: loadBalance(), role: 'PLAYER',
         puzzleMask: Number(localStorage.getItem(puzzleKey) || 0),
-        puzzleFragments: PUZZLE_FRAGMENTS, puzzleBonus: PUZZLE_BONUS
+        puzzleFragments: PUZZLE_FRAGMENTS, puzzleBonus: 0, dailyBonus: demoDailyState()
       };
+    }
+  },
+  dailyBonus: async (): Promise<DailyBonusState> => {
+    try {
+      const result = await request<unknown>('/daily-bonus');
+      const state = normalizeDailyBonus(result);
+      if (!state) throw new Error('Сервер вернул некорректное состояние ежедневного бонуса');
+      return state;
+    } catch (error) {
+      // В demo-режиме API недоступен — интерфейс остаётся интерактивным, но
+      // production-награда всегда определяется сервером.
+      // A 404 is an older backend without this optional endpoint; use the
+      // local demo state in that case. Auth/business errors remain visible.
+      if (error instanceof ApiError && error.status === 404) return demoDailyState();
+      if (isNetworkError(error)) return demoDailyState();
+      throw error;
+    }
+  },
+  claimDailyBonus: async (): Promise<DailyBonusState> => {
+    const idempotencyKey = crypto.randomUUID();
+    const payload: RequestInit = {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ idempotencyKey })
+    };
+    try {
+      const result = await request<unknown>('/daily-bonus/claim', payload);
+      const state = normalizeDailyBonus(result);
+      if (!state) throw new Error('Сервер вернул некорректный выигрыш');
+      return state;
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
+        try {
+          const result = await request<unknown>('/daily-bonus/scratch', payload);
+          const state = normalizeDailyBonus(result);
+          if (!state) throw new Error('Сервер вернул некорректный выигрыш');
+          return state;
+        } catch (aliasError) {
+          if (aliasError instanceof ApiError && aliasError.status !== 404 && aliasError.status !== 405) throw aliasError;
+          if (!isNetworkError(aliasError) && !(aliasError instanceof ApiError)) throw aliasError;
+        }
+      }
+      if (error instanceof ApiError && error.status !== 404 && error.status !== 405) throw error;
+      if (isNetworkError(error) || error instanceof ApiError) return demoDailyClaim();
+      throw error;
     }
   },
   config: async (theme: Theme): Promise<GameConfig> => {
@@ -218,6 +418,7 @@ export const api = {
         { heading: 'Взрыв шара', text: 'На каждом уровне шар проходит проверку на разрыв, и шанс взрыва растёт с высотой.' },
         { heading: 'Заберите выигрыш', text: 'Нажмите «Забрать выигрыш» после первого уровня — коэффициент фиксируется, но шар летит дальше до взрыва. На последнем уровне выплата начисляется автоматически.' },
         { heading: 'Бустеры', text: 'Бустер ждёт на случайном уровне: долетев до него раньше cashout, вы умножаете коэффициент и получаете дополнительные очки.' },
+        { heading: 'Ежедневный билет', text: 'Каждый завершённый раунд даёт недостающий фрагмент дневного пазла. Соберите 6 из 6 и сотрите билет: награда от 10 до 2 000 бонусов, шанс на 2 000 — 0,001%.' },
         { heading: 'Честная игра', text: 'Результат раунда формируется сервером и подтверждается хешем commitment.' }
       ] };
     }

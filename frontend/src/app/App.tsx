@@ -12,6 +12,7 @@ import { Admin } from '../features/admin/Admin';
 import { Auth } from '../features/auth/Auth';
 import { Leaderboard } from '../features/leaderboard/Leaderboard';
 import { Profile } from '../features/profile/Profile';
+import { DailyBonusPanel } from '../features/game/DailyBonusPanel';
 
 function Header() {
   const queryClient = useQueryClient();
@@ -47,7 +48,10 @@ function Header() {
                 <span className="account-avatar">{(data?.username || 'Д').slice(0, 1).toUpperCase()}</span>
                 <span className="account-name">{data?.username || 'Загрузка…'}</span>
               </NavLink>
-              <div className="balance-pill"><span className="coin">★</span><span><small>ВАШ БАЛАНС</small><b>{data?.balance ?? '—'}</b></span></div>
+              <div className="balance-stack">
+                <div className="balance-pill"><span className="coin">★</span><span><small>ВАШ БАЛАНС</small><b>{data?.balance ?? '—'}</b></span></div>
+                <DailyBonusPanel token={token} profileState={data?.dailyBonus} />
+              </div>
               <button type="button" className="logout-button" onClick={logout}>Выйти</button>
             </div>
           </>

@@ -17,8 +17,9 @@ public final class Models {
   public enum Theme { RED, GREEN }
   public enum RoundState { CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED }
 
-  /** Награда за раунд: фрагмент пазла и состояние коллекции игрока. */
-  public record PuzzleAward(int fragment, int collected, int total, boolean completed, long bonus) {}
+  /** Награда за раунд: фрагмент пазла и состояние сегодняшнего лотерейного билета. */
+  public record PuzzleAward(int fragment, int collected, int total, boolean completed, long bonus,
+                            boolean ticketEligible) {}
 
   /**
    * Настройки игры, которыми управляет администратор без выпуска новой версии.

@@ -20,3 +20,6 @@ management:
     web:
       exposure:
         include: health,info,metrics
+daily-bonus:
+  # День определяется сервером, а не часовым поясом браузера.
+  zone-id: Europe/Moscow

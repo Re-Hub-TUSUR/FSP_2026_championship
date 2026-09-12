@@ -1,107 +1,189 @@
 openapi: 3.0.3
 info:
-  title: Balloon Game API
-  version: 1.0.0
-  description: MVP REST contract for the «Воздушный шар» game.
+  title: Balloon Game API (implemented MVP)
+  version: 1.1.0
+  description: |
+    REST-контракт фактической реализации проекта. Авторизация использует
+    непрозрачный bearer-токен сессии, который хранится в памяти backend; это
+    не JWT. Раунды и realtime-состояние также хранятся в памяти GameService.
+    PostgreSQL, Redis, WebSocket, Flyway и Springdoc в текущем коде не
+    используются.
 servers:
   - url: http://localhost:8080/api/v1
 tags:
+  - name: auth
   - name: player
   - name: rounds
+  - name: lottery
   - name: admin
 paths:
-  /me:
-    get:
-      tags: [player]
-      summary: Current profile and bonus balance
-      security: [{ bearerAuth: [] }]
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Зарегистрировать игрока
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
-        '200':
-          description: Profile
+        '201':
+          description: Созданный профиль (токен выдаётся отдельным login)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Error' }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Войти и получить bearer-токен сессии
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Токен и профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Завершить текущую сессию
+      description: Заголовок Authorization необязателен; при его отсутствии возвращается тот же успешный ответ.
+      responses:
+        '200':
+          description: Сессия удалена (если была)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+  /auth/topup:
+    post:
+      tags: [auth]
+      summary: Авторизованное демо-пополнение баланса
+      description: Добавляет фиксированные 500 бонусов на баланс текущего аккаунта не более одного раза за календарный день в зоне Europe/Moscow и возвращает обновлённый профиль. Повтор до следующего дня получает бизнес-ошибку 400.
+      security: [{ sessionBearer: [] }]
+      responses:
+        '200':
+          description: Обновлённый профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Профиль текущей сессии (алиас)
+      security: [{ sessionBearer: [] }]
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Error' }
+  /me:
+    get:
+      tags: [player]
+      summary: Профиль, баланс и состояние дневного бонуса
+      security: [{ sessionBearer: [] }]
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Error' }
   /game/config:
     get:
       tags: [player]
-      summary: Public game configuration for a theme
-      security: [{ bearerAuth: [] }]
+      summary: Публичная конфигурация темы
+      description: Авторизация не требуется. При отсутствии theme используется RED.
       parameters:
-        - in: query
-          name: theme
-          required: true
-          schema: { $ref: '#/components/schemas/Theme' }
+        - $ref: '#/components/parameters/ThemeQuery'
       responses:
         '200':
-          description: Theme configuration
+          description: Снимок конфигурации
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GameConfig' }
+        '400': { $ref: '#/components/responses/Error' }
+  /rules:
+    get:
+      tags: [player]
+      summary: Правила игры
+      responses:
+        '200':
+          description: Набор текстовых секций
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /daily-bonus:
     get:
       tags: [player]
-      summary: Current daily puzzle and lottery ticket state
-      security: [{ bearerAuth: [] }]
+      summary: Состояние дневного пазла и билета
+      security: [{ sessionBearer: [] }]
       responses:
         '200':
-          description: Daily bonus state
+          description: Состояние текущего дня сервера
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DailyBonusState' }
-        '401': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Error' }
   /daily-bonus/claim:
     post:
       tags: [player]
-      summary: Scratch today's ticket and credit its reward exactly once
-      security: [{ bearerAuth: [] }]
+      summary: Стереть билет и начислить награду
+      description: Требует собранного пазла. Повторные вызовы не начисляют баланс повторно.
+      security: [{ sessionBearer: [] }]
       parameters:
-        - $ref: '#/components/parameters/DailyBonusIdempotencyKey'
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
       requestBody:
         required: false
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                idempotencyKey: { type: string, maxLength: 128 }
+            schema: { $ref: '#/components/schemas/DailyClaimRequest' }
       responses:
         '200':
-          description: Scratched ticket state (repeated calls return the same reward)
+          description: Состояние билета с сохранённой наградой
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DailyBonusState' }
-        '401': { $ref: '#/components/responses/Problem' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /daily-bonus/scratch:
     post:
       tags: [player]
-      summary: Alias for /daily-bonus/claim
-      security: [{ bearerAuth: [] }]
+      summary: Алиас daily-bonus/claim
+      security: [{ sessionBearer: [] }]
       parameters:
-        - $ref: '#/components/parameters/DailyBonusIdempotencyKey'
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
       requestBody:
         required: false
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                idempotencyKey: { type: string, maxLength: 128 }
+            schema: { $ref: '#/components/schemas/DailyClaimRequest' }
       responses:
         '200':
-          description: Scratched ticket state
+          description: Состояние билета
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DailyBonusState' }
-        '401': { $ref: '#/components/responses/Problem' }
-        '409': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /rounds:
     post:
       tags: [rounds]
-      summary: Start a round and debit the selected bet
-      security: [{ bearerAuth: [] }]
+      summary: Стартовать раунд и списать ставку
+      security: [{ sessionBearer: [] }]
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
       requestBody:
         required: true
         content:
@@ -109,135 +191,406 @@ paths:
             schema: { $ref: '#/components/schemas/StartRoundRequest' }
       responses:
         '201':
-          description: Started round
+          description: Созданный раунд
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Round' }
-        '409': { $ref: '#/components/responses/Problem' }
-        '422': { $ref: '#/components/responses/Problem' }
+        '400':
+          description: Некорректная ставка, тема или Idempotency-Key; повтор ключа с другими параметрами также возвращает 400.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401': { $ref: '#/components/responses/Error' }
   /rounds/history:
     get:
       tags: [rounds]
-      summary: Completed round history
-      security: [{ bearerAuth: [] }]
+      summary: Завершённые раунды в памяти текущего процесса
+      description: Публичный список всех игроков в обезличенной проекции (без seed, commitment, balance и reward). Отдаются только завершённые раунды; максимум 200 хранится в памяти GameService текущего процесса и теряется при перезапуске.
       parameters:
         - in: query
           name: limit
           schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         '200':
-          description: History
+          description: История
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/Round' }
+                items: { $ref: '#/components/schemas/HistoryRound' }
+  /rounds/crashes:
+    get:
+      tags: [rounds]
+      summary: Короткая публичная лента crash
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Лента завершённых crash
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CrashRow' }
   /rounds/{roundId}:
     get:
       tags: [rounds]
-      summary: Authoritative current state
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RoundId' }]
+      summary: Текущее состояние раунда
+      description: Возвращает состояние раунда по его UUID только авторизованному владельцу; несовпадение владельца скрывается ответом 404.
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RoundId'
       responses:
         '200':
-          description: Round state
+          description: Авторитетный снимок раунда
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Round' }
-        '404': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /rounds/{roundId}/cashout:
     post:
       tags: [rounds]
-      summary: Cash out at the server multiplier
-      security: [{ bearerAuth: [] }]
+      summary: Зафиксировать cashout по серверному коэффициенту
+      description: |
+        Разрешён после первого уровня и фиксирует серверный коэффициент.
+        Запрос должен быть авторизован и относиться к собственному раунду;
+        несовпадение владельца скрывается ответом 404. Отдельный
+        Idempotency-Key endpoint не принимает.
+      security: [{ sessionBearer: [] }]
       parameters:
         - $ref: '#/components/parameters/RoundId'
-        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
-          description: Accepted cashout
+          description: Обновлённый раунд; полёт может продолжаться после cashout
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CashoutResult' }
-        '409': { $ref: '#/components/responses/Problem' }
+              schema: { $ref: '#/components/schemas/Round' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /rounds/{roundId}/proof:
     get:
       tags: [rounds]
-      summary: Fairness commitment and revealed seed after settlement
-      security: [{ bearerAuth: [] }]
-      parameters: [{ $ref: '#/components/parameters/RoundId' }]
+      summary: Commitment и раскрытие seed
+      description: Seed и crash-уровень появляются после завершения; доступ разрешён только владельцу раунда, несовпадение скрывается ответом 404.
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RoundId'
       responses:
         '200':
-          description: Round proof (seed may be omitted before settlement)
+          description: Доказательство честности
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Proof' }
-  /rules:
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /leaderboard:
     get:
       tags: [player]
-      summary: Human-readable game rules
+      summary: Рейтинг участников
+      description: Публичный REST-снимок; WebSocket-обновлений нет.
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string, default: '' }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [score, multiplier, activity], default: score }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
         '200':
-          description: Rules
+          description: Рейтинг
           content:
             application/json:
-              schema: { type: object, additionalProperties: true }
-  /admin/config:
+              schema: { $ref: '#/components/schemas/LeaderboardResponse' }
+  /lottery:
     get:
-      tags: [admin]
-      summary: Get active configuration
-      security: [{ bearerAuth: [] }]
+      tags: [lottery]
+      summary: Каталог наборов билетов
+      security: [{ sessionBearer: [] }]
       responses:
         '200':
-          description: Active configuration
+          description: Каталог и баланс
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/GameConfig' }
-    put:
-      tags: [admin]
-      summary: Publish a validated configuration version
-      security: [{ bearerAuth: [] }]
+              schema: { $ref: '#/components/schemas/LotteryCatalog' }
+        '401': { $ref: '#/components/responses/Error' }
+  /lottery/buy:
+    post:
+      tags: [lottery]
+      summary: Купить набор билетов за бонусы
+      security: [{ sessionBearer: [] }]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/GameConfig' }
+            schema: { $ref: '#/components/schemas/BuyRequest' }
       responses:
         '200':
-          description: New active configuration
+          description: Новый счётчик билетов и баланс
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketBalance' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+  /lottery/offer/{roundId}:
+    get:
+      tags: [lottery]
+      summary: Персональное предложение после раунда
+      description: Требует сессии и применяется только к собственному завершённому раунду пользователя; чужой или неизвестный roundId скрывается ответом 404.
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RoundId'
+      responses:
+        '200':
+          description: Предложение или причина отказа
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LotteryOffer' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /lottery/offer/accept:
+    post:
+      tags: [lottery]
+      summary: Принять персональное предложение
+      description: Требует bearer-сессию и принимает предложение только для собственного раунда. Неизвестный или чужой roundId скрывается ответом 404; использованное или истёкшее предложение возвращает 400.
+      security: [{ sessionBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptOfferRequest' }
+      responses:
+        '200':
+          description: Новый счётчик билетов и баланс
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketBalance' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /admin/config:
+    get:
+      tags: [admin]
+      summary: Получить конфигурацию темы
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ThemeQuery'
+      responses:
+        '200':
+          description: Конфигурация
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GameConfig' }
-        '422': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Error' }
+    put:
+      tags: [admin]
+      summary: Проверить и опубликовать конфигурацию
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ThemeQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfigUpdate' }
+      responses:
+        '200':
+          description: Новая версия
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameConfig' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/config/reset:
+    post:
+      tags: [admin]
+      summary: Вернуть defaults для темы
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ThemeQuery'
+      responses:
+        '200':
+          description: Восстановленная конфигурация
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GameConfig' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/users:
+    get:
+      tags: [admin]
+      summary: Список аккаунтов
+      security: [{ sessionBearer: [] }]
+      responses:
+        '200':
+          description: Профили
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Me' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/users/{accountId}:
+    get:
+      tags: [admin]
+      summary: Получить аккаунт
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '403': { $ref: '#/components/responses/Error' }
+        '400': { $ref: '#/components/responses/Error' }
+  /admin/users/{accountId}/block:
+    post:
+      tags: [admin]
+      summary: Заблокировать аккаунт
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActionRequest' }
+      responses:
+        '200':
+          description: Обновлённый профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/users/{accountId}/unblock:
+    post:
+      tags: [admin]
+      summary: Разблокировать аккаунт
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActionRequest' }
+      responses:
+        '200':
+          description: Обновлённый профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/users/{accountId}/role:
+    put:
+      tags: [admin]
+      summary: Изменить роль
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoleRequest' }
+      responses:
+        '200':
+          description: Обновлённый профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/users/{accountId}/adjust:
+    post:
+      tags: [admin]
+      summary: Скорректировать баланс или очки
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdjustRequest' }
+      responses:
+        '200':
+          description: Обновлённый профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /admin/audit:
+    get:
+      tags: [admin]
+      summary: Журнал административных действий
+      security: [{ sessionBearer: [] }]
+      responses:
+        '200':
+          description: Последние записи журнала
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '403': { $ref: '#/components/responses/Error' }
 components:
   securitySchemes:
-    bearerAuth:
+    sessionBearer:
       type: http
       scheme: bearer
-      bearerFormat: JWT
+      bearerFormat: opaque-session
+      description: Случайный bearer-токен AccountService; токены не являются JWT и хранятся только в памяти.
   parameters:
+    ThemeQuery:
+      in: query
+      name: theme
+      required: false
+      schema:
+        type: string
+        enum: [RED, GREEN]
+        default: RED
     RoundId:
       in: path
       name: roundId
       required: true
       schema: { type: string, format: uuid }
-    IdempotencyKey:
-      in: header
-      name: Idempotency-Key
+    AccountId:
+      in: path
+      name: accountId
       required: true
-      schema: { type: string, minLength: 8, maxLength: 128 }
-    DailyBonusIdempotencyKey:
+      schema: { type: string }
+    OptionalIdempotencyKey:
       in: header
       name: Idempotency-Key
       required: false
-      description: Optional correlation key. A completed ticket is idempotent even if the original response was lost.
+      description: Необязательный ключ повторяемой операции; любые пробельные символы запрещены, максимальная длина 128 символов. Для POST /rounds один и тот же ключ с другими параметрами возвращает 400.
       schema: { type: string, maxLength: 128 }
   responses:
-    Problem:
-      description: RFC 7807 error
+    Error:
+      description: |
+        Ошибка. Контроллеры обычно возвращают JSON с полем error; глобальный
+        обработчик для необработанных ошибок может вернуть поля type, title,
+        status и detail. Единый RFC 7807 content type и requestId не обещаются.
       content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
   schemas:
     Theme:
       type: string
@@ -245,18 +598,57 @@ components:
     RoundState:
       type: string
       enum: [CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED]
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 40 }
+        password: { type: string, minLength: 6, maxLength: 128, format: password }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+    LoginResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/Me' }
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
     Me:
       type: object
-      required: [userId, username, role, balance]
+      required: [id, username, role, balance, points, level]
       properties:
-        userId: { type: string }
+        id: { type: string }
         username: { type: string }
-        role: { type: string, enum: [PLAYER, ADMIN] }
+        role: { type: string, enum: [USER, ADMIN] }
+        blocked: { type: boolean }
         balance: { type: integer, format: int64, minimum: 0 }
+        points: { type: integer, format: int64, minimum: 0 }
+        level: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        puzzleMask: { type: integer, minimum: 0 }
+        puzzleFragments: { type: integer, minimum: 1 }
+        puzzlesCompleted: { type: integer, minimum: 0 }
+        puzzleBonus: { type: integer, format: int64, description: Устаревшее поле, фактически всегда 0 }
+        dailyRewardMin: { type: integer, format: int64 }
+        dailyRewardMax: { type: integer, format: int64 }
+        lotteryTickets: { type: integer, minimum: 0 }
+        wins: { type: integer, minimum: 0 }
         dailyBonus: { $ref: '#/components/schemas/DailyBonusState' }
+    DailyClaimRequest:
+      type: object
+      properties:
+        idempotencyKey: { type: string, maxLength: 128 }
     DailyBonusState:
       type: object
-      required: [date, day, progress, collected, total, ticket, ticketState, eligible, ticketAvailable, claimed, balance]
+      required: [date, progress, total, ticketState, eligible, claimed, balance]
       properties:
         date: { type: string, format: date }
         day: { type: string, format: date }
@@ -267,9 +659,9 @@ components:
         puzzleFragments: { type: integer, minimum: 1 }
         completed: { type: boolean }
         ticket: { type: boolean }
-        ticketAvailable: { type: boolean }
         ticketState: { type: string, enum: [LOCKED, AVAILABLE, SCRATCHED] }
         eligible: { type: boolean }
+        ticketAvailable: { type: boolean }
         claimed: { type: boolean }
         reward:
           type: integer
@@ -277,7 +669,7 @@ components:
           minimum: 10
           maximum: 2000
           nullable: true
-          description: Server-selected integer reward from 10 to 2000; 2000 has a 0.001% probability.
+          description: Серверная награда; 2000 имеет вероятность 0.001%.
         claimedAt: { type: string, format: date-time, nullable: true }
         nextResetAt: { type: string, format: date-time }
         balance: { type: integer, format: int64, minimum: 0 }
@@ -287,105 +679,291 @@ components:
       required: [theme, betOptionId]
       properties:
         theme: { $ref: '#/components/schemas/Theme' }
-        betOptionId: { type: string }
+        betOptionId:
+          type: string
+          pattern: '^(red|green)-x[1-4]$'
+          description: "Точный идентификатор одной из четырёх ставок выбранной темы: red-x1..red-x4 или green-x1..green-x4."
+        idempotencyKey:
+          type: string
+          maxLength: 128
+          description: Для запуска раунда любые пробельные символы запрещены.
+    PuzzleAward:
+      type: object
+      properties:
+        fragment: { type: integer }
+        collected: { type: integer }
+        total: { type: integer }
+        completed: { type: boolean }
+        bonus: { type: integer, format: int64 }
+        ticketEligible: { type: boolean }
     Round:
       type: object
-      required: [roundId, state, theme, betAmount, levels, multiplier]
+      required: [roundId, state, theme, betAmount, levels, level, multiplier, payout, points]
       properties:
         roundId: { type: string, format: uuid }
         state: { $ref: '#/components/schemas/RoundState' }
         theme: { $ref: '#/components/schemas/Theme' }
-        betAmount: { type: integer, format: int64 }
-        boosterMultiplier: { type: number, format: float, nullable: true }
-        boosterLevel: { type: integer, description: уровень, на котором срабатывает бонус очков }
+        betAmount: { type: integer, format: int64, minimum: 1 }
+        boosterMultiplier: { type: number, format: double }
+        boosterLevel: { type: integer, minimum: 0 }
         boosterActivated: { type: boolean }
-        levels: { type: integer }
-        level: { type: integer }
-        multiplier: { type: number, format: float }
-        nextMultiplier: { type: number, format: float, description: коэффициент следующего уровня }
+        cashedOut: { type: boolean }
+        flightOver: { type: boolean }
+        levels: { type: integer, minimum: 1 }
+        level: { type: integer, minimum: 0 }
+        multiplier: { type: number, format: double }
+        nextMultiplier: { type: number, format: double }
         ladder:
           type: array
-          description: лестница коэффициентов раунда, индекс равен номеру уровня
-          items: { type: number, format: float }
-        potentialPayout: { type: integer, format: int64, description: выплата при cashout прямо сейчас }
-        cashedOutMultiplier: { type: number, format: float, nullable: true }
+          description: Индекс 0 содержит стартовое значение 1.0.
+          items: { type: number, format: double }
+        potentialPayout: { type: integer, format: int64 }
+        cashedOutMultiplier: { type: number, format: double, nullable: true }
         commitment: { type: string }
-        points: { type: integer, format: int64 }
-        payout: { type: integer, format: int64 }
-        profit: { type: integer, format: int64, description: payout минус ставка, заполняется после завершения }
-        balance: { type: integer, format: int64, description: текущий баланс игрока }
-        balanceAfter: { type: integer, format: int64, description: баланс после денежных операций раунда }
-        popLevel: { type: integer, description: уровень взрыва, раскрывается после завершения раунда }
-        seed: { type: string, description: сид раунда, раскрывается после завершения }
+        points: { type: integer, format: int64, minimum: 0 }
+        payout: { type: integer, format: int64, minimum: 0 }
+        profit: { type: integer, format: int64 }
+        balanceAfter: { type: integer, format: int64, minimum: 0 }
+        popLevel: { type: integer, nullable: true }
+        crashMultiplier: { type: number, format: double, nullable: true }
+        potentialMax: { type: integer, format: int64, nullable: true }
+        seed: { type: string, nullable: true }
+        reward: { $ref: '#/components/schemas/PuzzleAward' }
         createdAt: { type: string, format: date-time }
-        endedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time, nullable: true }
         serverTime: { type: string, format: date-time }
-    CashoutResult:
+    HistoryRound:
       type: object
-      required: [roundId, state, multiplier, payout]
+      description: Обезличенная публичная проекция; приватные seed, commitment, balance и reward не выдаются.
+      required: [roundId, state, theme, betAmount, levels, level, multiplier, payout, points, createdAt]
       properties:
         roundId: { type: string, format: uuid }
         state: { $ref: '#/components/schemas/RoundState' }
-        multiplier: { type: number, format: float }
-        payout: { type: integer, format: int64 }
-        points: { type: integer, format: int64 }
+        theme: { $ref: '#/components/schemas/Theme' }
+        betAmount: { type: integer, format: int64, minimum: 1 }
+        boosterMultiplier: { type: number, format: double }
+        boosterLevel: { type: integer, minimum: 0 }
+        boosterActivated: { type: boolean }
+        cashedOut: { type: boolean }
+        flightOver: { type: boolean }
+        levels: { type: integer, minimum: 1 }
+        level: { type: integer, minimum: 0 }
+        multiplier: { type: number, format: double }
+        nextMultiplier: { type: number, format: double }
+        potentialPayout: { type: integer, format: int64, minimum: 0 }
+        payout: { type: integer, format: int64, minimum: 0 }
+        profit: { type: integer, format: int64 }
+        points: { type: integer, format: int64, minimum: 0 }
+        cashedOutMultiplier: { type: number, format: double, nullable: true }
+        popLevel: { type: integer, nullable: true }
+        crashMultiplier: { type: number, format: double, nullable: true }
+        potentialMax: { type: integer, format: int64, nullable: true }
+        createdAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time, nullable: true }
+    CrashRow:
+      type: object
+      required: [roundId, theme, crashMultiplier, survived, endedAt]
+      properties:
+        roundId: { type: string, format: uuid }
+        theme: { $ref: '#/components/schemas/Theme' }
+        crashMultiplier: { type: number, format: double }
+        survived: { type: boolean }
+        endedAt: { type: string, format: date-time }
     Proof:
       type: object
-      required: [roundId, commitment]
+      required: [roundId, commitment, configVersion]
       properties:
         roundId: { type: string, format: uuid }
         commitment: { type: string }
-        seed: { type: string, nullable: true }
         configVersion: { type: integer, format: int64 }
+        seed: { type: string, nullable: true }
         popLevel: { type: integer, nullable: true }
         boosterLevel: { type: integer, nullable: true }
+        crashMultiplier: { type: number, format: double, nullable: true }
         ladder:
           type: array
-          items: { type: number, format: float }
-        formula: { type: string, description: формула шанса взрыва для самостоятельной проверки }
+          items: { type: number, format: double }
+        formula: { type: string }
     GameConfig:
       type: object
-      required: [gameId, version, theme, levels, pointsPerLevel]
+      required: [gameId, gameName, gameType, active, theme, levels, betOptions, pointsPerLevel, version]
       properties:
         gameId: { type: string }
-        version: { type: integer, format: int64 }
+        gameName: { type: string }
+        gameType: { type: string }
+        active: { type: boolean }
         theme: { $ref: '#/components/schemas/Theme' }
-        levels: { type: integer, minimum: 1 }
+        levels: { type: integer, enum: [9, 12], description: Для GREEN допускается 9, для RED — 12 }
+        version: { type: integer, format: int64 }
         pointsPerLevel: { type: integer, format: int64, minimum: 0 }
         pointsCashoutBonus: { type: integer, format: int64, minimum: 0 }
         pointsBoosterBonus: { type: integer, format: int64, minimum: 0 }
+        baseHazard: { type: number, format: double }
+        hazardGrowth: { type: number, format: double }
+        maxHazard: { type: number, format: double }
+        rtp: { type: number, format: double }
+        boosterWeights:
+          type: array
+          description: Нормированные вероятности выбора уровня бустера.
+          items: { type: number, format: double, minimum: 0 }
         ladder:
           type: array
-          description: коэффициенты по уровням, индекс равен номеру уровня
-          items: { type: number, format: float }
+          items: { type: number, format: double }
+        ladderOverride:
+          type: array
+          items: { type: number, format: double }
+        ladderSource: { type: string, enum: [formula, custom] }
         levelTable:
           type: array
           items:
             type: object
             properties:
               level: { type: integer }
-              multiplier: { type: number, format: float }
-              popChance: { type: number, format: float, description: вероятность взрыва на этом уровне }
-        maxMultiplier: { type: number, format: float }
-        rtp: { type: number, format: float, description: возврат игроку, одинаков на каждом уровне }
-        baseHazard: { type: number, format: float }
-        hazardGrowth: { type: number, format: float }
-        maxHazard: { type: number, format: float }
+              multiplier: { type: number, format: double }
+              popChance: { type: number, format: double }
+              boosterChance: { type: number, format: double }
+              expectedReturn: { type: number, format: double }
+        maxMultiplier: { type: number, format: double }
         betOptions:
           type: array
+          minItems: 4
+          maxItems: 4
           items:
             type: object
-            required: [id, amount, boosterMultiplier]
+            required: [id, amount, boosterMultiplier, boosterChance, ladder]
             properties:
               id: { type: string }
               amount: { type: integer, format: int64, minimum: 1 }
-              boosterMultiplier: { type: number, format: float, minimum: 1 }
-    Problem:
+              boosterMultiplier: { type: number, format: double, minimum: 1 }
+              boosterChance: { type: number, format: double, minimum: 0, maximum: 1 }
+              ladder:
+                type: array
+                items: { type: number, format: double }
+        minWinAmount: { type: integer, format: int64, minimum: 0 }
+        popupTimeout: { type: integer, minimum: 3, maximum: 60 }
+    ConfigUpdate:
       type: object
-      required: [type, title, status, detail, requestId]
+      description: Поля необязательны; отсутствующие поля сохраняют текущие значения.
       properties:
-        type: { type: string, format: uri-reference }
+        gameId: { type: string }
+        gameName: { type: string }
+        gameType: { type: string }
+        active: { type: boolean }
+        levels: { type: integer, enum: [9, 12], description: Значение должно соответствовать теме (GREEN=9, RED=12) }
+        betOptions:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: object
+            properties:
+              amount: { type: integer, format: int64, minimum: 1 }
+              boosterMultiplier: { type: number, format: double, minimum: 1 }
+        pointsPerLevel: { type: integer, format: int64, minimum: 0 }
+        pointsCashoutBonus: { type: integer, format: int64, minimum: 0 }
+        pointsBoosterBonus: { type: integer, format: int64, minimum: 0 }
+        baseHazard: { type: number, format: double }
+        hazardGrowth: { type: number, format: double }
+        maxHazard: { type: number, format: double }
+        rtp: { type: number, format: double }
+        boosterWeights:
+          type: array
+          items: { type: number, format: double, minimum: 0 }
+        ladderOverride:
+          type: array
+          items: { type: number, format: double }
+        minWinAmount: { type: integer, format: int64, minimum: 0 }
+        popupTimeout: { type: integer, minimum: 3, maximum: 60 }
+    LeaderboardResponse:
+      type: object
+      required: [items, updatedAt]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/LeaderboardEntry' }
+        updatedAt: { type: string, format: date-time }
+    LeaderboardEntry:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string }
+        balance: { type: integer, format: int64 }
+        rank: { type: integer }
+        level: { type: integer }
+        points: { type: integer, format: int64 }
+        multiplier: { type: number, format: double }
+        rounds: { type: integer }
+        cashouts: { type: integer }
+        trend: { type: integer, format: int64 }
+        updatedAt: { type: string, format: date-time }
+    LotteryCatalog:
+      type: object
+      required: [tickets, balance, ticketPrice, packs]
+      properties:
+        tickets: { type: integer, minimum: 0 }
+        balance: { type: integer, format: int64, minimum: 0 }
+        ticketPrice: { type: integer, format: int64, minimum: 1 }
+        packs:
+          type: array
+          items: { $ref: '#/components/schemas/LotteryPack' }
+    LotteryPack:
+      type: object
+      properties:
+        id: { type: string }
+        tickets: { type: integer, minimum: 1 }
+        price: { type: integer, format: int64, minimum: 1 }
+        label: { type: string }
+    BuyRequest:
+      type: object
+      required: [packId]
+      properties:
+        packId: { type: string }
+    TicketBalance:
+      type: object
+      required: [tickets, balance]
+      properties:
+        tickets: { type: integer, minimum: 0 }
+        balance: { type: integer, format: int64, minimum: 0 }
+    LotteryOffer:
+      type: object
+      required: [eligible, reason, tickets, price, fullPrice, payout, timeoutSeconds]
+      properties:
+        eligible: { type: boolean }
+        reason: { type: string, nullable: true }
+        tickets: { type: integer, minimum: 0 }
+        price: { type: integer, format: int64, minimum: 0 }
+        fullPrice: { type: integer, format: int64, minimum: 0 }
+        payout: { type: integer, format: int64, minimum: 0 }
+        timeoutSeconds: { type: integer, minimum: 1 }
+    AcceptOfferRequest:
+      type: object
+      required: [roundId]
+      properties:
+        roundId: { type: string, format: uuid }
+    ActionRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1 }
+    RoleRequest:
+      type: object
+      required: [role, reason]
+      properties:
+        role: { type: string, enum: [USER, ADMIN] }
+        reason: { type: string, minLength: 1 }
+    AdjustRequest:
+      type: object
+      required: [reason]
+      properties:
+        balanceDelta: { type: integer, format: int64 }
+        pointsDelta: { type: integer, format: int64 }
+        reason: { type: string, minLength: 1 }
+    Error:
+      type: object
+      additionalProperties: true
+      properties:
+        error: { type: string }
+        type: { type: string }
         title: { type: string }
         status: { type: integer }
         detail: { type: string }
-        requestId: { type: string }

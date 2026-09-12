@@ -20,7 +20,11 @@ export function Landing() {
   const enter = async (kind: 'demo' | 'admin') => {
     setBusy(true); setError('');
     try { await api.login(kind, kind === 'demo' ? 'demo123' : 'admin123'); queryClient.clear(); nav(kind === 'admin' ? '/admin' : '/play'); }
-    catch { localStorage.setItem('balloon-token', `demo-${kind}`); window.dispatchEvent(new Event('balloon-auth-changed')); queryClient.clear(); nav(kind === 'admin' ? '/admin' : '/play'); }
+    catch (err) {
+      // A failed login must never create a synthetic token or grant local access.
+      setError(err instanceof Error ? err.message : 'Не удалось войти');
+      setModal(true);
+    }
     finally { setBusy(false); }
   };
   const submit = async (e: React.FormEvent) => {

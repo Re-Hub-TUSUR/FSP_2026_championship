@@ -5,8 +5,8 @@ import { api, type LotteryOffer } from '../../shared/api/client';
 import { PuzzleReward } from './PuzzleReward';
 import { UpsellDialog } from '../lottery/UpsellDialog';
 
-/** Частоту показа определяет сервер (каждый N-й выигрыш); клиент лишь не повторяет окно для того же раунда. */
-const upsellKey = (roundId: string) => `balloon-upsell-${roundId}`;
+/** Частоту показа определяет сервер; в одной игровой сессии окно показывается не более одного раза. */
+const UPSELL_SESSION_KEY = 'balloon-upsell-shown';
 
 /** Через столько секунд бездействия игрок возвращается к выбору ставки (п. 1.5 постановки). */
 const AUTO_RETURN_SECONDS = 10;
@@ -46,12 +46,12 @@ export function Result() {
   // Персональное предложение запрашивается только после выигрышного раунда и один раз за сессию.
   useEffect(() => {
     if (!round || round.state === 'STARTED' || !(round.payout && round.payout > 0)) return;
-    if (sessionStorage.getItem(upsellKey(id))) return;
+    if (sessionStorage.getItem(UPSELL_SESSION_KEY)) return;
     let cancelled = false;
     api.lotteryOffer(id)
       .then((offer) => {
         if (cancelled || !offer.eligible) return;
-        sessionStorage.setItem(upsellKey(id), '1');
+        sessionStorage.setItem(UPSELL_SESSION_KEY, '1');
         setUpsell(offer);
       })
       .catch(() => { /* предложение необязательно: молча пропускаем */ });

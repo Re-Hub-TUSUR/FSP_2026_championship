@@ -47,6 +47,12 @@ export interface Round {
 
 const API = (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1';
 
+/**
+ * Local game data is opt-in only.  A failed production request must remain
+ * visible to the caller instead of being replaced with a local transaction.
+ */
+export const isDemoMode = (): boolean => import.meta.env.VITE_DEMO_MODE === 'true';
+
 const POINTS_PER_LEVEL = 10;
 const POINTS_CASHOUT_BONUS = 20;
 const POINTS_BOOSTER_BONUS = 15;
@@ -307,14 +313,12 @@ function demoRound(id: string): DemoRound {
   return found;
 }
 
-class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
 }
-
-/** Ошибка бизнес-правила от сервера: её нужно показать игроку, а не уходить в демо-режим. */
-const isBusinessError = (error: unknown): error is ApiError => error instanceof ApiError && error.status >= 400 && error.status < 500;
-/** Fetch throws TypeError when the optional local backend is genuinely unavailable. */
-const isNetworkError = (error: unknown): error is TypeError => error instanceof TypeError;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem('balloon-token');
@@ -326,8 +330,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ? 'Сервер ещё запускается, попробуйте через полминуты'
       : `Ошибка сервера (${response.status})`;
     try {
-      const body = JSON.parse(text);
-      message = body.error || body.detail || message;
+      const body = JSON.parse(text) as Record<string, unknown>;
+      const serverMessage = body.error ?? body.detail ?? body.message;
+      if (typeof serverMessage === 'string' && serverMessage.trim()) message = serverMessage;
     } catch { /* сервер ответил не JSON — оставляем понятный текст */ }
     throw new ApiError(response.status, message);
   }
@@ -335,9 +340,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  login: async (username: string, password: string) => { const result = await request<{token:string; user:Me}>('/auth/login', { method:'POST', body: JSON.stringify({username,password}) }); localStorage.setItem('balloon-token', result.token); window.dispatchEvent(new Event('balloon-auth-changed')); return result.user; },
+  login: async (username: string, password: string) => { const result = await request<{token:string; user:Me}>('/auth/login', { method:'POST', body: JSON.stringify({username,password}) }); sessionStorage.removeItem('balloon-upsell-shown'); localStorage.setItem('balloon-token', result.token); window.dispatchEvent(new Event('balloon-auth-changed')); return result.user; },
   register: async (username: string, password: string) => { const result = await request<Me>('/auth/register', { method:'POST', body: JSON.stringify({username,password}) }); return api.login(username,password).then(() => result); },
-  logout: async () => { try { await request('/auth/logout', { method:'POST' }); } finally { localStorage.removeItem('balloon-token'); window.dispatchEvent(new Event('balloon-auth-changed')); } },
+  logout: async () => { try { await request('/auth/logout', { method:'POST' }); } finally { localStorage.removeItem('balloon-token'); sessionStorage.removeItem('balloon-upsell-shown'); window.dispatchEvent(new Event('balloon-auth-changed')); } },
   topUp: async (): Promise<Me> => request<Me>('/auth/topup', { method: 'POST' }),
   me: async (): Promise<Me> => {
     try {
@@ -345,14 +350,17 @@ export const api = {
       const daily = normalizeDailyBonus(profile);
       return daily ? { ...profile, dailyBonus: daily, puzzleMask: daily.puzzleMask ?? profile.puzzleMask, puzzleFragments: daily.total } : profile;
     } catch (error) {
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        localStorage.removeItem('balloon-token');
-        window.dispatchEvent(new Event('balloon-auth-changed'));
+      if (!isDemoMode()) {
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          localStorage.removeItem('balloon-token');
+          sessionStorage.removeItem('balloon-upsell-shown');
+          window.dispatchEvent(new Event('balloon-auth-changed'));
+        }
         throw error;
       }
       const localToken = localStorage.getItem('balloon-token');
       return {
-        username: localToken === 'demo-admin' ? 'admin' : localToken === 'demo-demo' ? 'demo' : 'Гость', balance: localToken === 'demo-demo' ? 500 : loadBalance(), role: localToken === 'demo-admin' ? 'ADMIN' : 'PLAYER',
+        username: localToken === 'demo-admin' ? 'admin' : localToken === 'demo-demo' ? 'demo' : 'Гость', balance: loadBalance(), role: localToken === 'demo-admin' ? 'ADMIN' : 'PLAYER',
         puzzleMask: Number(localStorage.getItem(puzzleKey) || 0),
         puzzleFragments: PUZZLE_FRAGMENTS, puzzleBonus: 0, dailyBonus: demoDailyState()
       };
@@ -365,13 +373,8 @@ export const api = {
       if (!state) throw new Error('Сервер вернул некорректное состояние ежедневного бонуса');
       return state;
     } catch (error) {
-      // В demo-режиме API недоступен — интерфейс остаётся интерактивным, но
-      // production-награда всегда определяется сервером.
-      // A 404 is an older backend without this optional endpoint; use the
-      // local demo state in that case. Auth/business errors remain visible.
-      if (error instanceof ApiError && error.status === 404) return demoDailyState();
-      if (isNetworkError(error)) return demoDailyState();
-      throw error;
+      if (!isDemoMode()) throw error;
+      return demoDailyState();
     }
   },
   claimDailyBonus: async (): Promise<DailyBonusState> => {
@@ -394,20 +397,22 @@ export const api = {
           if (!state) throw new Error('Сервер вернул некорректный выигрыш');
           return state;
         } catch (aliasError) {
-          if (aliasError instanceof ApiError && aliasError.status !== 404 && aliasError.status !== 405) throw aliasError;
-          if (!isNetworkError(aliasError) && !(aliasError instanceof ApiError)) throw aliasError;
+          if (!isDemoMode()) throw aliasError;
         }
       }
-      if (error instanceof ApiError && error.status !== 404 && error.status !== 405) throw error;
-      if (isNetworkError(error) || error instanceof ApiError) return demoDailyClaim();
-      throw error;
+      if (!isDemoMode()) throw error;
+      return demoDailyClaim();
     }
   },
   config: async (theme: Theme): Promise<GameConfig> => {
-    try { return await request<GameConfig>(`/game/config?theme=${theme}`); } catch { return demoConfig(theme); }
+    try { return await request<GameConfig>(`/game/config?theme=${theme}`); } catch (error) {
+      if (!isDemoMode()) throw error;
+      return demoConfig(theme);
+    }
   },
   history: async (): Promise<Round[]> => {
-    try { return await request<Round[]>('/rounds/history?limit=50'); } catch {
+    try { return await request<Round[]>('/rounds/history?limit=50'); } catch (error) {
+      if (!isDemoMode()) throw error;
       const rows = loadRounds();
       rows.forEach(advance);
       saveRounds(rows);
@@ -420,7 +425,8 @@ export const api = {
   adminBlock: async (id:string, blocked:boolean, reason:string) => request<AdminUser>(`/admin/users/${id}/${blocked ? 'block' : 'unblock'}`, {method:'POST', body:JSON.stringify({reason})}),
   adminAdjust: async (id:string, balanceDelta:number, pointsDelta:number, reason:string) => request<AdminUser>(`/admin/users/${id}/adjust`, {method:'POST', body:JSON.stringify({balanceDelta,pointsDelta,reason})}),
   rules: async () => {
-    try { return await request<{ title: string; sections: { heading: string; text: string }[] }>('/rules'); } catch {
+    try { return await request<{ title: string; sections: { heading: string; text: string }[] }>('/rules'); } catch (error) {
+      if (!isDemoMode()) throw error;
       return { title: 'Правила игры', sections: [
         { heading: 'Сделайте ставку', text: 'Выберите красную или зелёную тему и один из четырёх бустеров.' },
         { heading: 'Рост коэффициентов', text: 'Каждый уровень поднимает коэффициент экспоненциально: чем выше шар, тем дороже следующий шаг.' },
@@ -436,7 +442,7 @@ export const api = {
     try {
       return await request<Round>('/rounds', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ theme, betOptionId }) });
     } catch (error) {
-      if (isBusinessError(error)) throw error;
+      if (!isDemoMode()) throw error;
       const config = demoConfig(theme);
       const option = config.betOptions.find((x) => x.id === betOptionId) || config.betOptions[0];
       if (loadBalance() < option.amount) throw new Error('Недостаточно баланса');
@@ -458,11 +464,14 @@ export const api = {
     }
   },
   round: async (id: string): Promise<Round> => {
-    try { return await request<Round>(`/rounds/${id}`); } catch { return demoRound(id); }
+    try { return await request<Round>(`/rounds/${id}`); } catch (error) {
+      if (!isDemoMode()) throw error;
+      return demoRound(id);
+    }
   },
   cashout: async (id: string): Promise<Round> => {
     try { return await request<Round>(`/rounds/${id}/cashout`, { method: 'POST' }); } catch (error) {
-      if (isBusinessError(error)) throw error;
+      if (!isDemoMode()) throw error;
       const rows = loadRounds();
       const round = rows.find((row) => row.roundId === id);
       if (!round) throw new Error('Раунд не найден');
@@ -476,7 +485,8 @@ export const api = {
     }
   },
   crashes: async (): Promise<CrashRow[]> => {
-    try { return await request<CrashRow[]>('/rounds/crashes?limit=20'); } catch {
+    try { return await request<CrashRow[]>('/rounds/crashes?limit=20'); } catch (error) {
+      if (!isDemoMode()) throw error;
       const rows = loadRounds();
       rows.forEach(advance);
       return rows.filter((row) => row.flightOver).reverse().slice(0, 20).map((row) => ({

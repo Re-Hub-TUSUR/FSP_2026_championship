@@ -26,13 +26,17 @@ public class GameService implements CommandLineRunner {
   private static final Logger log = LoggerFactory.getLogger(GameService.class);
   private static final long TICK_MS = 1000;
   private static final int HISTORY_LIMIT = 200;
-  private static final long START_BALANCE = 1000;
 
   private final Map<String, Round> rounds = new ConcurrentHashMap<>();
   private final Queue<String> roundOrder = new ConcurrentLinkedQueue<>();
-  private final Map<String, Round> idempotent = Collections.synchronizedMap(new LinkedHashMap<>() {
-    @Override protected boolean removeEldestEntry(Map.Entry<String, Round> eldest) { return size() > HISTORY_LIMIT; }
-  });
+  /**
+   * Guarded by {@link #idempotencyLock} and retained as long as its round is
+   * retained. A plain get/put pair could debit twice on concurrent retries;
+   * a fixed-size LRU cache could evict an active round's key during a burst.
+   * Keys are therefore pruned together with evicted finished rounds.
+   */
+  private final Map<String, IdempotencyRecord> idempotent = new HashMap<>();
+  private final Object idempotencyLock = new Object();
   private final Map<Theme, Config> configs = new ConcurrentHashMap<>();
   private final Map<String, ScheduledFuture<?>> tickers = new ConcurrentHashMap<>();
   private final ScheduledExecutorService scheduler;
@@ -41,8 +45,7 @@ public class GameService implements CommandLineRunner {
   private final GameConfigRepository configRepository;
   private final ObjectMapper mapper;
 
-  private final Object wallet = new Object();
-  private long balance = START_BALANCE;
+  private record IdempotencyRecord(Round round, Theme theme, String betOption) {}
 
   public GameService(AccountService accounts, GameConfigRepository configRepository, ObjectMapper mapper) {
     this.accounts = accounts;
@@ -67,7 +70,14 @@ public class GameService implements CommandLineRunner {
         // появившиеся после публикации конфига, берутся из defaults, а не обнуляются.
         ObjectNode merged = mapper.valueToTree(Config.defaults(theme));
         merged.setAll((ObjectNode) mapper.readTree(entity.getPayload()));
-        configs.put(theme, mapper.treeToValue(merged, Config.class));
+        Config loaded = mapper.treeToValue(merged, Config.class);
+        int requiredLevels = theme == Theme.RED ? 12 : 9;
+        if (loaded.levels() != requiredLevels) {
+          log.warn("Игнорируется конфигурация {} с {} уровнями: для темы требуется {}",
+              theme, loaded.levels(), requiredLevels);
+          continue;
+        }
+        configs.put(theme, loaded);
       } catch (Exception ignored) {
         // Повреждённая запись не должна ронять старт — тема останется на значениях по умолчанию.
       }
@@ -76,44 +86,85 @@ public class GameService implements CommandLineRunner {
 
   public Config config(Theme theme) { return configs.get(theme); }
 
-  public long balance() { synchronized (wallet) { try { return accounts.byUsername("demo").getBalance(); } catch (Exception ignored) { return balance; } } }
+  /**
+   * Compatibility accessor for the demo account. Gameplay never uses a
+   * process-local wallet; this value always comes from the persisted account.
+   */
+  public long balance() { return accounts.byUsername("demo").getBalance(); }
 
   public Round start(String user, Theme theme, String betOption) {
     Config config = Optional.ofNullable(config(theme)).orElseThrow(() -> new IllegalArgumentException("Неизвестная тема"));
     if (!config.active()) throw new IllegalStateException("Тема временно отключена администратором");
-    int index = optionIndex(betOption, config.bets().length);
+    int index = optionIndex(betOption, theme, config.bets().length);
     long bet = config.bets()[index];
-    long balanceAfterBet;
-    try { balanceAfterBet = accounts.debit(user, bet).getBalance(); }
-    catch (NoSuchElementException e) { balanceAfterBet = debit(bet); }
 
+    // Construct all fallible in-memory data before debiting the account.
     String id = UUID.randomUUID().toString();
     String seed = randomSeed();
     String commitment = sha256(seed + ":" + id + ":" + config.version());
     double booster = config.boosters()[Math.min(index, config.boosters().length - 1)];
+    int popLevel = popLevel(seed, id, config);
+    int boosterLevel = pickBoosterLevel(config, booster);
+    double[] ladder = config.ladderForBooster(booster);
+
+    long balanceAfterBet = accounts.debit(user, bet).getBalance();
     Round round = new Round(id, user, config, bet, booster,
-        seed, commitment, popLevel(seed, id, config), pickBoosterLevel(config, booster), config.ladderForBooster(booster));
+        seed, commitment, popLevel, boosterLevel, ladder);
     round.balanceAfter = balanceAfterBet;
 
-    remember(round);
-    tickers.put(id, scheduler.scheduleAtFixedRate(() -> tick(round), TICK_MS, TICK_MS, TimeUnit.MILLISECONDS));
-    return round;
+    try {
+      remember(round);
+      tickers.put(id, scheduler.scheduleAtFixedRate(() -> tick(round), TICK_MS, TICK_MS, TimeUnit.MILLISECONDS));
+      return round;
+    } catch (RuntimeException e) {
+      // Do not leave a debited account behind if local round registration or
+      // scheduler submission fails before the round can be played.
+      rounds.remove(id, round);
+      roundOrder.remove(id);
+      try { accounts.credit(user, bet); }
+      catch (Exception compensationFailure) {
+        log.error("Не удалось компенсировать ставку {} для пользователя {} после ошибки старта", bet, user, compensationFailure);
+      }
+      throw e;
+    }
   }
 
   public Round startIdempotent(String user, Theme theme, String betOption, String key) {
-    String mapKey = user + ":" + key;
-    if (key != null && !key.isBlank()) {
-      Round previous = idempotent.get(mapKey);
-      if (previous != null) return previous;
+    String normalizedKey = normalizeIdempotencyKey(key);
+    if (normalizedKey == null) return start(user, theme, betOption);
+
+    String mapKey = user + ":" + normalizedKey;
+    synchronized (idempotencyLock) {
+      IdempotencyRecord previous = idempotent.get(mapKey);
+      if (previous != null) {
+        // Do not return a stale object after the bounded round history evicts
+        // it.  A retry after eviction is a new operation.
+        if (rounds.containsKey(previous.round().id)) {
+          if (previous.theme() != theme || !Objects.equals(previous.betOption(), betOption)) {
+            throw new IllegalArgumentException("Idempotency-Key уже использован для другого запроса");
+          }
+          return previous.round();
+        }
+        idempotent.remove(mapKey);
+      }
+      Round round = start(user, theme, betOption);
+      idempotent.put(mapKey, new IdempotencyRecord(round, theme, betOption));
+      return round;
     }
-    Round round = start(user, theme, betOption);
-    if (key != null && !key.isBlank()) idempotent.put(mapKey, round);
-    return round;
   }
 
   public Round get(String id) {
     Round round = rounds.get(id);
     if (round == null) throw new NoSuchElementException("Раунд не найден: " + id);
+    return round;
+  }
+
+  /** Returns a round only to its owner; mismatches are deliberately hidden as 404. */
+  public Round getOwned(String id, String username) {
+    Round round = get(id);
+    if (username == null || !round.userId.equals(username)) {
+      throw new NoSuchElementException("Раунд не найден: " + id);
+    }
     return round;
   }
 
@@ -123,6 +174,10 @@ public class GameService implements CommandLineRunner {
    */
   public Round cashout(String id) {
     Round round = get(id);
+    return cashoutOwned(round);
+  }
+
+  private Round cashoutOwned(Round round) {
     synchronized (round) {
       if (round.cashedOut()) return round;
       if (round.flightOver) throw new IllegalStateException("Раунд уже завершён");
@@ -130,6 +185,10 @@ public class GameService implements CommandLineRunner {
       payout(round, RoundState.CASHED_OUT);
       return round;
     }
+  }
+
+  public Round cashoutOwned(String id, String username) {
+    return cashoutOwned(getOwned(id, username));
   }
 
   public List<Round> history() {
@@ -170,7 +229,9 @@ public class GameService implements CommandLineRunner {
     String gameType = blankOr(request.gameType(), current.gameType());
 
     int levels = request.levels();
-    if (levels < 3 || levels > 30) throw new IllegalArgumentException("Количество уровней должно быть от 3 до 30");
+    int requiredLevels = theme == Theme.RED ? 12 : 9;
+    if (levels != requiredLevels)
+      throw new IllegalArgumentException("Для темы " + theme + " должно быть ровно " + requiredLevels + " уровней");
 
     long[] bets = request.bets();
     if (bets == null || bets.length != 4) throw new IllegalArgumentException("Нужно ровно 4 варианта ставки");
@@ -179,22 +240,33 @@ public class GameService implements CommandLineRunner {
     double[] boosters = request.boosters();
     if (boosters == null || boosters.length != 4) throw new IllegalArgumentException("Нужно ровно 4 множителя бустера");
     for (double booster : boosters)
-      if (booster < 1 || booster > 100) throw new IllegalArgumentException("Множитель бустера должен быть от 1 до 100");
+      if (!Double.isFinite(booster) || booster < 1 || booster > 100)
+        throw new IllegalArgumentException("Множитель бустера должен быть конечным числом от 1 до 100");
 
     if (request.pointsPerLevel() < 0 || request.pointsCashoutBonus() < 0 || request.pointsBoosterBonus() < 0)
       throw new IllegalArgumentException("Начисление очков не может быть отрицательным");
+    try {
+      long maximumBooster = (long) Math.ceil(Arrays.stream(boosters).max().orElse(1));
+      long maximumRoundPoints = Math.addExact(
+          Math.addExact(Math.multiplyExact((long) levels, request.pointsPerLevel()), request.pointsCashoutBonus()),
+          Math.multiplyExact((long) request.pointsBoosterBonus(), maximumBooster));
+      if (maximumRoundPoints > Integer.MAX_VALUE)
+        throw new IllegalArgumentException("Начисление очков переполняет лимит одного раунда");
+    } catch (ArithmeticException e) {
+      throw new IllegalArgumentException("Начисление очков переполняет лимит одного раунда");
+    }
 
     double baseHazard = request.baseHazard();
-    if (baseHazard < 0.001 || baseHazard > 0.5)
+    if (!Double.isFinite(baseHazard) || baseHazard < 0.001 || baseHazard > 0.5)
       throw new IllegalArgumentException("Базовый шанс взрыва должен быть от 0.001 до 0.5");
     double hazardGrowth = request.hazardGrowth();
-    if (hazardGrowth < 1 || hazardGrowth > 2)
+    if (!Double.isFinite(hazardGrowth) || hazardGrowth < 1 || hazardGrowth > 2)
       throw new IllegalArgumentException("Темп роста шанса взрыва должен быть от 1.0 до 2.0");
     double maxHazard = request.maxHazard();
-    if (maxHazard < baseHazard || maxHazard > 0.95)
+    if (!Double.isFinite(maxHazard) || maxHazard < baseHazard || maxHazard > 0.95)
       throw new IllegalArgumentException("Потолок шанса взрыва должен быть между базовым шансом и 0.95");
     double rtp = request.rtp();
-    if (rtp < 0.5 || rtp > 1)
+    if (!Double.isFinite(rtp) || rtp < 0.5 || rtp > 1)
       throw new IllegalArgumentException("Возврат игроку (RTP) должен быть от 0.5 до 1.0");
 
     double[] weights = request.boosterWeights();
@@ -203,7 +275,8 @@ public class GameService implements CommandLineRunner {
     } else {
       double sum = 0;
       for (double weight : weights) {
-        if (weight < 0) throw new IllegalArgumentException("Вероятность бустера не может быть отрицательной");
+        if (!Double.isFinite(weight) || weight < 0)
+          throw new IllegalArgumentException("Вероятность бустера должна быть конечной и неотрицательной");
         sum += weight;
       }
       if (sum <= 0) throw new IllegalArgumentException("Хотя бы у одного уровня вероятность бустера должна быть больше нуля");
@@ -230,6 +303,8 @@ public class GameService implements CommandLineRunner {
     double[] ladder = new double[levels];
     double previous = 1.0;
     for (int i = 0; i < levels; i++) {
+      if (!Double.isFinite(requested[i]))
+        throw new IllegalArgumentException("Коэффициент уровня должен быть конечным числом");
       double value = Math.round(requested[i] * 100.0) / 100.0;
       if (value <= previous)
         throw new IllegalArgumentException("Коэффициент уровня " + (i + 1) + " должен быть больше предыдущего (" + previous + ")");
@@ -288,9 +363,35 @@ public class GameService implements CommandLineRunner {
     return proof;
   }
 
+  public Map<String, Object> proofOwned(String id, String username) {
+    return proofOwnedRound(getOwned(id, username));
+  }
+
+  private Map<String, Object> proofOwnedRound(Round round) {
+    Map<String, Object> proof = new LinkedHashMap<>();
+    proof.put("roundId", round.id);
+    proof.put("commitment", "sha256:" + round.commitment);
+    proof.put("configVersion", round.config.version());
+    if (round.finished()) {
+      proof.put("seed", round.seed);
+      proof.put("popLevel", round.popLevel);
+      proof.put("boosterLevel", round.boosterLevel);
+      proof.put("ladder", round.ladder);
+      proof.put("crashMultiplier", round.crashMultiplier());
+      proof.put("formula", "hazard(level) = min(maxHazard, baseHazard * hazardGrowth^(level-1)); шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
+    }
+    return proof;
+  }
+
   private void tick(Round round) {
     synchronized (round) {
-      if (round.flightOver) { stopTicker(round.id); return; }
+      if (round.flightOver) {
+        // A failed final side effect is retried safely: endFlight has separate
+        // completion guards for points, reward and win registration.
+        if (!round.settlementComplete) endFlight(round);
+        else stopTicker(round.id);
+        return;
+      }
       int next = round.level + 1;
 
       if (next >= round.popLevel) {
@@ -301,13 +402,13 @@ public class GameService implements CommandLineRunner {
       }
 
       round.level = next;
-      // После cashout бустер не активируется и очки не начисляются — полёт идёт только для наглядности.
-      if (!round.cashedOut()) {
-        if (next == round.boosterLevel && !round.boosterActivated) {
-          round.boosterActivated = true;
-          round.points += (int) Math.round(round.config.pointsBoosterBonus() * round.boosterMultiplier);
-        }
-        round.points += round.config.pointsPerLevel();
+      // Пересечение уровня всегда приносит базовые очки, даже если игрок
+      // уже сделал cashout: полёт продолжается до crash именно для этого
+      // сценария. Бустер после cashout намеренно не активируется.
+      round.points += round.config.pointsPerLevel();
+      if (!round.cashedOut() && next == round.boosterLevel && !round.boosterActivated) {
+        round.boosterActivated = true;
+        round.points += (int) Math.round(round.config.pointsBoosterBonus() * round.boosterMultiplier);
       }
       round.multiplier = round.multiplierAt(next);
 
@@ -320,49 +421,107 @@ public class GameService implements CommandLineRunner {
   }
 
   private void payout(Round round, RoundState state) {
-    round.cashedOutMultiplier = round.multiplier;
-    round.payout = Math.max(1, Math.round(round.betAmount * round.multiplier));
-    round.points += round.config.pointsCashoutBonus();
-    try { accounts.credit(round.userId, round.payout); accounts.addPoints(round.userId, round.points); }
-    catch (NoSuchElementException e) { credit(round.payout); }
+    double settledMultiplier = round.multiplier;
+    long settledPayout = Math.max(1, Math.round(round.betAmount * settledMultiplier));
+    int settledPoints = Math.addExact(round.points, round.config.pointsCashoutBonus());
+    long balanceAfter = accounts.credit(round.userId, settledPayout).getBalance();
+
+    // Mark the in-memory state only after the server-side credit succeeds,
+    // so a failed transaction remains safely retryable.
+    round.cashedOutMultiplier = settledMultiplier;
+    round.payout = settledPayout;
+    round.points = settledPoints;
     round.state = state;
-    round.balanceAfter = playerBalance(round);
+    round.balanceAfter = balanceAfter;
     // Cashout только фиксирует выплату: полёт останавливается отдельно, когда шар лопнет.
     if (state != RoundState.CASHED_OUT) endFlight(round);
   }
 
   private void finish(Round round, RoundState state) {
     round.state = state;
-    if (state == RoundState.CRASHED) {
-      try { accounts.addPoints(round.userId, round.points); } catch (Exception ignored) { /* демо-режим без аккаунтов */ }
-    }
     endFlight(round);
   }
 
   private void endFlight(Round round) {
-    round.flightOver = true;
-    round.endedAt = Instant.now();
-    // Награда выдаётся по итогам раунда независимо от выигрыша или проигрыша.
-    try { round.reward = accounts.awardPuzzleFragment(round.userId); }
-    catch (Exception e) {
-      // Демо-режим может работать без аккаунта, но production-сбой не должен исчезать бесследно.
-      log.warn("Не удалось выдать ежедневный фрагмент пазла для раунда {} пользователя {}: {}",
-          round.id, round.userId, e.getMessage());
+    // `flightOver` becomes visible before the side effects below are done, so
+    // retention must use the explicit settlement state rather than `finished`
+    // alone.  Setting `settling` first closes the small race with a concurrent
+    // start request pruning old history.
+    if (round.settlementComplete || round.settling) return;
+    round.settling = true;
+    if (!round.flightOver) {
+      round.flightOver = true;
+      round.endedAt = Instant.now();
     }
-    // Счётчик выигрышей определяет, на каком раунде показать предложение «Закрепи успех».
-    if (round.payout > 0) {
-      try { round.winNumber = accounts.registerWin(round.userId); }
-      catch (Exception e) {
-        log.warn("Не удалось учесть выигрыш раунда {} пользователя {}: {}", round.id, round.userId, e.getMessage());
+    try {
+      // Level/cashout/booster points are settled once, after the flight has
+      // actually ended. This also includes levels crossed after cashout.
+      // Each effect has its own completed marker so a transient database
+      // failure can be retried by the ticker without crediting anything twice.
+      if (!round.pointsSettled) {
+        try {
+          accounts.addPoints(round.userId, round.points);
+          round.pointsSettled = true;
+        } catch (Exception e) {
+          log.error("Не удалось начислить очки раунда {} пользователю {}: {}", round.id, round.userId, e.getMessage(), e);
+          if (isTerminalSettlementFailure(e)) round.pointsSettled = true;
+        }
       }
+
+      // Награда выдаётся по итогам раунда независимо от выигрыша или проигрыша.
+      if (!round.rewardSettled) {
+        try {
+          // null is a valid result after today's ticket is already issued.
+          round.reward = accounts.awardPuzzleFragment(round.userId);
+          round.rewardSettled = true;
+        } catch (Exception e) {
+          log.warn("Не удалось выдать ежедневный фрагмент пазла для раунда {} пользователя {}: {}",
+              round.id, round.userId, e.getMessage());
+          if (isTerminalSettlementFailure(e)) round.rewardSettled = true;
+        }
+      }
+
+      // Счётчик выигрышей определяет, на каком раунде показать предложение «Закрепи успех».
+      if (round.payout > 0 && !round.winSettled) {
+        try {
+          round.winNumber = accounts.registerWin(round.userId);
+          round.winSettled = true;
+        }
+        catch (Exception e) {
+          log.warn("Не удалось учесть выигрыш раунда {} пользователя {}: {}", round.id, round.userId, e.getMessage());
+          if (isTerminalSettlementFailure(e)) round.winSettled = true;
+        }
+      }
+
+      try { round.balanceAfter = playerBalance(round); }
+      catch (Exception e) {
+        log.warn("Не удалось получить баланс после раунда {} пользователя {}: {}", round.id, round.userId, e.getMessage());
+      }
+      round.settlementComplete = round.pointsSettled
+          && round.rewardSettled
+          && (round.payout == 0 || round.winSettled);
+    } finally {
+      // Keep `settling` set until all effects have been marked complete and
+      // the ticker has been cancelled; prune observes both flags.
+      // Stop the ticker first while `settling` is still true.  Otherwise a
+      // concurrent start/prune could remove this round in the tiny interval
+      // between clearing the flag and cancelling its scheduled task.
+      try {
+        if (round.settlementComplete) stopTicker(round.id);
+      } finally {
+        round.settling = false;
+      }
+      if (round.settlementComplete) pruneRetainedRounds();
     }
-    round.balanceAfter = playerBalance(round);
-    stopTicker(round.id);
+  }
+
+  /** Account state errors are not recoverable by a later scheduler tick. */
+  private static boolean isTerminalSettlementFailure(Exception e) {
+    return e instanceof SecurityException || e instanceof NoSuchElementException;
   }
 
   private long playerBalance(Round round) {
-    try { return accounts.byUsername(round.userId).getBalance(); }
-    catch (Exception ignored) { return balance(); }
+    return accounts.byUsername(round.userId).getBalance();
   }
 
   private void stopTicker(String id) {
@@ -373,22 +532,47 @@ public class GameService implements CommandLineRunner {
   private void remember(Round round) {
     rounds.put(round.id, round);
     roundOrder.add(round.id);
-    while (roundOrder.size() > HISTORY_LIMIT) {
-      String oldest = roundOrder.poll();
-      if (oldest != null) rounds.remove(oldest);
+    pruneRetainedRounds();
+  }
+
+  /**
+   * Bounds completed history without ever deleting an active round or leaving
+   * its scheduled ticker orphaned.  If more than HISTORY_LIMIT rounds are
+   * simultaneously active, they are all retained until some complete.
+   */
+  private void pruneRetainedRounds() {
+    // Never evict a live round merely because many players started at once:
+    // that would make its owner unable to cash out.  Finished history is
+    // pruned first; a burst of more than HISTORY_LIMIT active rounds is kept
+    // temporarily and becomes prunable as flights end.
+    while (rounds.size() > HISTORY_LIMIT) {
+      boolean removed = false;
+      for (String candidate : roundOrder) {
+        Round candidateRound = rounds.get(candidate);
+        if (candidateRound == null) {
+          roundOrder.remove(candidate);
+          continue;
+        }
+        // A finished round may still be crediting points, awarding a puzzle
+        // fragment, or registering a win.  It stays addressable and retains
+        // its idempotency record until all those effects are complete.
+        if (candidateRound.finished() && candidateRound.settlementComplete
+            && !candidateRound.settling && rounds.remove(candidate, candidateRound)) {
+          roundOrder.remove(candidate);
+          forgetIdempotencyFor(candidate);
+          removed = true;
+          break;
+        }
+      }
+      if (!removed) break;
     }
   }
 
-  private long debit(long amount) {
-    synchronized (wallet) {
-      if (balance < amount) throw new IllegalStateException("Недостаточно баланса");
-      balance -= amount;
-      return balance;
+  /** Remove retry records only after their completed round leaves retention. */
+  private void forgetIdempotencyFor(String roundId) {
+    synchronized (idempotencyLock) {
+      idempotent.entrySet().removeIf(entry -> entry.getValue().round().id.equals(roundId));
     }
-  }
-
-  private void credit(long amount) {
-    synchronized (wallet) { balance += amount; }
   }
 
   /** Первый уровень, на котором шар лопается; levels+1 означает, что шар долетел до вершины. */
@@ -399,14 +583,34 @@ public class GameService implements CommandLineRunner {
     return config.levels() + 1;
   }
 
-  private int optionIndex(String option, int count) {
-    if (option == null) return Math.min(1, count - 1);
+  private int optionIndex(String option, Theme theme, int count) {
+    if (option == null || option.isBlank())
+      throw new IllegalArgumentException("Вариант ставки обязателен");
+    String value = option.trim();
+    if (!option.equals(value))
+      throw new IllegalArgumentException("Неизвестный вариант ставки: " + option);
+    String prefix = theme.name().toLowerCase(Locale.ROOT) + "-x";
+    if (!value.startsWith(prefix) || value.length() == prefix.length())
+      throw new IllegalArgumentException("Неизвестный вариант ставки: " + option);
+    String suffix = value.substring(prefix.length());
+    if (!suffix.matches("[1-9][0-9]*"))
+      throw new IllegalArgumentException("Неизвестный вариант ставки: " + option);
     try {
-      int n = Integer.parseInt(option.replaceAll("\\D", ""));
-      return Math.max(0, Math.min(count - 1, n - 1));
+      int n = Integer.parseInt(suffix);
+      if (n < 1 || n > count) throw new IllegalArgumentException("Неизвестный вариант ставки: " + option);
+      return n - 1;
     } catch (NumberFormatException e) {
-      return Math.min(1, count - 1);
+      throw new IllegalArgumentException("Неизвестный вариант ставки: " + option);
     }
+  }
+
+  private static String normalizeIdempotencyKey(String value) {
+    if (value == null) return null;
+    if (value.isBlank()) return null;
+    if (value.length() > 128) throw new IllegalArgumentException("Idempotency-Key должен быть не длиннее 128 символов");
+    if (value.chars().anyMatch(Character::isWhitespace))
+      throw new IllegalArgumentException("Idempotency-Key не должен содержать пробелы");
+    return value;
   }
 
   private static double hmacUnit(String seed, String message) {

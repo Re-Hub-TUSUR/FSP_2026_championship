@@ -6,6 +6,7 @@ import com.example.balloon.domain.Models.Round;
 import com.example.balloon.domain.Models.RoundState;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -46,8 +47,14 @@ public class LotteryService {
   }
 
   public Offer offerFor(Round round, AccountEntity account) {
+    if (round == null || account == null) throw new IllegalArgumentException("Раунд и игрок обязательны");
+    if (!round.userId.equals(account.getUsername()))
+      throw new java.util.NoSuchElementException("Раунд не найден: " + round.id);
     int timeout = round.config.popupTimeout();
+    if (round.offerAccepted) return Offer.declined("Предложение уже использовано", timeout);
     if (!round.flightOver) return Offer.declined("Раунд ещё не завершён", timeout);
+    if (round.endedAt != null && Instant.now().isAfter(round.endedAt.plusSeconds(timeout)))
+      return Offer.declined("Срок действия предложения истёк", timeout);
     if (round.state != RoundState.CASHED_OUT && round.state != RoundState.SETTLED)
       return Offer.declined("Предложение доступно только после успешного cashout", timeout);
     if (round.payout < round.config.minWinAmount())
@@ -80,9 +87,18 @@ public class LotteryService {
   /** Покупка персонального предложения: цена пересчитывается на сервере. */
   public AccountEntity acceptOffer(String username, Round round) {
     AccountEntity account = accounts.byUsername(username);
-    Offer offer = offerFor(round, account);
-    if (!offer.eligible()) throw new IllegalStateException(offer.reason());
-    return purchase(username, offer.tickets(), offer.price());
+    if (round == null || !round.userId.equals(account.getUsername()))
+      throw new java.util.NoSuchElementException("Раунд не найден");
+    synchronized (round) {
+      if (round.offerAccepted) throw new IllegalStateException("Предложение уже использовано");
+      Offer offer = offerFor(round, account);
+      if (!offer.eligible()) throw new IllegalStateException(offer.reason());
+      AccountEntity updated = purchase(username, offer.tickets(), offer.price());
+      // Mark only after the purchase succeeds. A failed debit can be retried,
+      // while concurrent successful requests cannot buy the offer twice.
+      round.offerAccepted = true;
+      return updated;
+    }
   }
 
   private AccountEntity purchase(String username, int tickets, long price) {

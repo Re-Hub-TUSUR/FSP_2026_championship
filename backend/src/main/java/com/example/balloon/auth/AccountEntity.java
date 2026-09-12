@@ -2,6 +2,7 @@ package com.example.balloon.auth;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "accounts", indexes = {@Index(name = "idx_accounts_username", columnList = "username", unique = true)})
@@ -25,6 +26,8 @@ public class AccountEntity {
     @Column(nullable=false, columnDefinition="integer default 0 not null") private int lotteryTickets;
     /** Сколько раундов игрок закончил с выигрышем: по этому счётчику показывается предложение «Закрепи успех». */
     @Column(nullable=false, columnDefinition="integer default 0 not null") private int wins;
+    /** One server-authoritative demo top-up is available per configured calendar day. */
+    private LocalDate lastTopUpDate;
     @Column(nullable=false) private Instant createdAt;
     @Column(nullable=false) private Instant updatedAt;
 
@@ -40,6 +43,7 @@ public class AccountEntity {
     public void setPuzzleMask(int value){puzzleMask=value; touch();} public void setPuzzlesCompleted(int value){puzzlesCompleted=value; touch();}
     public int getLotteryTickets(){return lotteryTickets;} public void setLotteryTickets(int value){lotteryTickets=value; touch();}
     public int getWins(){return wins;} public void setWins(int value){wins=value; touch();}
+    public LocalDate getLastTopUpDate(){return lastTopUpDate;} public void setLastTopUpDate(LocalDate value){lastTopUpDate=value; touch();}
     public void setRole(String role){this.role=role; touch();} public void setBlocked(boolean blocked){this.blocked=blocked; touch();}
     public void setPasswordHash(String value){passwordHash=value; touch();} public void setBalance(long value){balance=value; touch();}
     public void setPoints(long value){points=value; this.level=Math.max(1,(int)(points/100)+1); touch();}

@@ -38,8 +38,7 @@ function Header() {
       const updated = await api.topUp();
       queryClient.setQueryData(['me'], updated);
     } catch {
-      // Демо-режим без backend: сохраняем быстрый сценарий для жюри локально.
-      setTopup((value) => value + 500);
+      // Баланс изменяется только подтверждённым ответом сервера.
     } finally { setTopupBusy(false); }
   };
   const logout = async () => { try { await api.logout(); } catch { /* сервер может быть недоступен — локальная сессия всё равно закрывается */ } finally { queryClient.clear(); setToken(null); nav('/', { replace: true }); } };

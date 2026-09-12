@@ -111,6 +111,13 @@ public class GameController {
     return Map.of("items", leaderboard.entries(q, sort, offset, limit), "updatedAt", Instant.now());
   }
 
+  @GetMapping("/tournament")
+  public Map<String,Object> tournament() {
+    leaderboard.settleTournament();
+    var t = leaderboard.tournament();
+    return Map.of("startedAt", t.startedAt(), "endsAt", t.endsAt(), "active", t.active(), "firstPrize", t.firstPrize(), "secondPrize", t.secondPrize(), "thirdPrize", t.thirdPrize(), "prizesPaid", t.prizesPaid());
+  }
+
   @GetMapping("/admin/config")
   public ResponseEntity<?> adminConfig(@RequestParam(defaultValue = "RED") Theme theme,
                                        @RequestHeader(value = "Authorization", required = false) String auth) {

@@ -14,10 +14,13 @@ export function Play() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [tournamentOpen, setTournamentOpen] = useState(false);
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data: config } = useQuery({ queryKey: ['config', theme], queryFn: () => api.config(theme) });
   const { data: red } = useQuery({ queryKey: ['config', 'RED'], queryFn: () => api.config('RED') });
   const { data: green } = useQuery({ queryKey: ['config', 'GREEN'], queryFn: () => api.config('GREEN') });
+  const { data: tournament } = useQuery({ queryKey: ['tournament'], queryFn: api.tournament, refetchInterval: 60000 });
+  const { data: leaders } = useQuery({ queryKey: ['leaderboard'], queryFn: api.leaderboard, enabled: tournamentOpen });
 
   const options = config?.betOptions || [];
   const selected = options.find((option) => option.id === bet);
@@ -90,7 +93,7 @@ export function Play() {
 
       <div className="section-title bet-title">
         <div><span className="eyebrow">ШАГ 2</span><h2>Выберите ставку</h2></div>
-        <button className="link-button" onClick={() => setRulesOpen(true)}>? Правила игры</button>
+        <div><button className="link-button tournament-trigger" onClick={() => setTournamentOpen(true)}>🏆 {tournament?.active ? 'Турнир' : 'Рейтинг'}</button> <button className="link-button" onClick={() => setRulesOpen(true)}>? Правила игры</button></div>
       </div>
       <div className="bet-grid">
         {options.map((option) => {
@@ -135,5 +138,6 @@ export function Play() {
     </section>
 
     {rulesOpen && <RulesDialog onClose={() => setRulesOpen(false)} />}
+    {tournamentOpen && <div className="modal-backdrop" onClick={() => setTournamentOpen(false)}><div className="modal-card tournament-modal" onClick={(e) => e.stopPropagation()}><button className="modal-close" onClick={() => setTournamentOpen(false)}>×</button><span className="eyebrow">🏆 ТУРНИР</span><h2>Турнирная таблица</h2>{tournament?.active && <p className="muted">До окончания: {Math.max(0, Math.ceil((new Date(tournament.endsAt).getTime()-Date.now())/86400000))} дн. · Призы: {tournament.firstPrize} / {tournament.secondPrize} / {tournament.thirdPrize} ★</p>}<div className="tournament-list">{(leaders||[]).map((row,i)=><div className={`tournament-row ${i<3?'top':''}`} key={row.id}><b>#{i+1}</b><span>{row.username}</span><strong>{row.points} ★</strong></div>)}</div></div></div>}
   </div>;
 }

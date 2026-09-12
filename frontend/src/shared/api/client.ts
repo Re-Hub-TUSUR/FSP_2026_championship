@@ -4,6 +4,7 @@ export type Theme = 'RED' | 'GREEN';
 export interface Me { id?: string; username: string; balance: number; role: string; points?: number; level?: number; blocked?: boolean; puzzleMask?: number; puzzleFragments?: number; puzzleBonus?: number; puzzlesCompleted?: number }
 export interface PuzzleAward { fragment: number; collected: number; total: number; completed: boolean; bonus: number }
 export interface LeaderRow { id: string; username: string; balance: number; rank?: number; level: number; points: number; multiplier: number; trend: number; rounds?: number; cashouts?: number; updatedAt?: string }
+export interface Tournament { startedAt: string; endsAt: string; active: boolean; firstPrize: number; secondPrize: number; thirdPrize: number; prizesPaid: boolean }
 export interface AdminUser { id: string; username: string; role: string; blocked: boolean; balance: number; points: number; level: number; createdAt?: string }
 export interface BetOption { id: string; amount: number; boosterMultiplier: number; boosterChance?: number; ladder?: number[] }
 export interface LevelRow { level: number; multiplier: number; popChance: number; boosterChance?: number; expectedReturn?: number }
@@ -207,6 +208,7 @@ export const api = {
     }
   },
   leaderboard: async (): Promise<LeaderRow[]> => { const result = await request<{items: LeaderRow[]}>('/leaderboard?limit=100'); return result.items || []; },
+  tournament: async (): Promise<Tournament> => request<Tournament>('/tournament'),
   adminUsers: async (): Promise<AdminUser[]> => request<AdminUser[]>('/admin/users'),
   adminAudit: async (): Promise<Array<{actor:string; action:string; details:string; createdAt:string}>> => request('/admin/audit'),
   adminBlock: async (id:string, blocked:boolean, reason:string) => request<AdminUser>(`/admin/users/${id}/${blocked ? 'block' : 'unblock'}`, {method:'POST', body:JSON.stringify({reason})}),

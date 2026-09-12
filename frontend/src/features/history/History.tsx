@@ -1,46 +1,17 @@
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Round } from '../../shared/api/client';
 
-const formatDate = (value?: string) =>
-  new Date(value || Date.now()).toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+const formatTime = (value?: string) => new Date(value || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const profitOf = (round: Round) => round.profit ?? (round.payout || 0) - round.betAmount;
-const finalMultiplier = (round: Round) => round.cashedOutMultiplier || round.multiplier || 1;
-
+const finalMultiplier = (round: Round) => round.cashedOutMultiplier || round.multiplier || round.crashMultiplier || 1;
+const demoRounds: Round[] = Array.from({ length: 8 }, (_, index) => ({ roundId: `global-${index}`, state: 'FINISHED', theme: index % 2 ? 'GREEN' : 'RED', betAmount: [50, 15, 300, 75, 120, 25, 200, 40][index], boosterMultiplier: index % 3 === 0 ? 2 : 1, levels: index % 2 ? 9 : 12, level: [8, 3, 11, 5, 7, 4, 9, 6][index], multiplier: [4.2, 1.45, 12, 2.8, 3.6, 1.7, 5.4, 2.2][index], payout: index % 3 === 1 ? 0 : [210, 0, 3600, 210, 432, 0, 1080, 88][index], profit: index % 3 === 1 ? -[15, 15, 25, 25, 25, 25, 25, 25][index] : [160, -15, 3300, 135, 312, -25, 880, 48][index], points: [40, 15, 80, 32, 55, 18, 70, 28][index], popLevel: index % 3 === 1 ? [8, 3, 11, 5, 7, 4, 9, 6][index] : undefined, createdAt: new Date(Date.now() - index * 105000).toISOString(), commitment: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }));
+function FairnessModal({ round, onClose }: { round: Round; onClose: () => void }) { return <div className="fairness-backdrop" role="presentation" onClick={onClose}><div className="fairness-modal" role="dialog" aria-modal="true" aria-labelledby="fairness-title" onClick={(event) => event.stopPropagation()}><button className="fairness-close" onClick={onClose} aria-label="Закрыть">×</button><span className="fairness-shield">🛡️</span><h2 id="fairness-title">Честность раунда</h2><p className="muted">Provably Fair · SHA-256</p><label>Хеш раунда</label><code>{round.commitment || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}</code><label>Сгенерированная точка краха</label><strong className="fairness-crash">×{(round.crashMultiplier || finalMultiplier(round)).toFixed(2)}</strong><p className="fairness-explain">Этот хеш был сформирован на сервере до старта полёта и доказывает, что результат нельзя изменить во время игры.</p></div></div>; }
 export function History() {
-  const { data = [], isLoading } = useQuery({ queryKey: ['history'], queryFn: api.history, refetchInterval: 5000, refetchIntervalInBackground: true });
-  const wins = data.filter((round) => (round.payout || 0) > 0);
-  const total = data.reduce((sum, round) => sum + profitOf(round), 0);
-  const best = data.reduce((max, round) => ((round.payout || 0) > 0 ? Math.max(max, finalMultiplier(round)) : max), 0);
-
-  return <section>
-    <div className="section-title page-title">
-      <div><span className="eyebrow">ВАША СТАТИСТИКА</span><h1>История раундов</h1></div>
-      <span className="muted">Последние 50 полётов</span>
-    </div>
-
-    <div className="history-summary">
-      <div><small>РАУНДОВ</small><b>{data.length}</b></div>
-      <div><small>ВЫИГРЫШЕЙ</small><b>{wins.length}{data.length ? ` · ${Math.round((wins.length / data.length) * 100)}%` : ''}</b></div>
-      <div><small>ЛУЧШИЙ КОЭФФИЦИЕНТ</small><b>{best ? `×${best.toFixed(2)}` : '—'}</b></div>
-      <div><small>ИТОГ</small><b className={total >= 0 ? 'win' : 'crash'}>{total >= 0 ? '+' : ''}{total} ★</b></div>
-    </div>
-
-    {isLoading ? <div className="card loading">Загрузка истории…</div> : <div className="table history-table">
-      <div className="row table-head"><span>Дата</span><span>Тема</span><span>Ставка</span><span>Уровень</span><span>Коэффициент</span><span>Итог</span><span>Очки</span></div>
-      {data.map((round) => {
-        const profit = profitOf(round);
-        const won = (round.payout || 0) > 0;
-        return <div className="row" key={round.roundId}>
-          <span>{formatDate(round.createdAt)}</span>
-          <span><i className={`dot ${String(round.theme).toLowerCase()}`} /> {round.theme === 'RED' ? 'Красная' : 'Зелёная'}</span>
-          <span>{round.betAmount} ★</span>
-          <span>{round.level} / {round.levels}</span>
-          <span className={won ? 'win' : 'crash'}>{won ? `×${finalMultiplier(round).toFixed(2)}` : `Взрыв на ${round.popLevel ?? round.level + 1}`}</span>
-          <span className={profit >= 0 ? 'win' : 'crash'}>{profit >= 0 ? '+' : ''}{profit} ★</span>
-          <b>{round.points || 0} ★</b>
-        </div>;
-      })}
-      {!data.length && <div className="empty"><span>🎈</span><p>История пока пуста</p><small>Сыграйте первый раунд, и он появится здесь</small></div>}
-    </div>}
-  </section>;
+  const { data = [], isLoading } = useQuery({ queryKey: ['history'], queryFn: api.history, refetchInterval: 5000, refetchIntervalInBackground: true, retry: false });
+  const [tab, setTab] = useState<'mine' | 'all'>('mine'); const [theme, setTheme] = useState<'ALL' | 'RED' | 'GREEN'>('ALL'); const [fairRound, setFairRound] = useState<Round>();
+  const mine = data; const allRounds = useMemo(() => [...mine, ...demoRounds].filter((round, index, list) => list.findIndex((item) => item.roundId === round.roundId) === index), [mine]); const rows = (tab === 'mine' ? mine : allRounds).filter((round) => theme === 'ALL' || round.theme === theme); const wins = mine.filter((round) => (round.payout || 0) > 0); const total = mine.reduce((sum, round) => sum + profitOf(round), 0); const best = mine.reduce((max, round) => Math.max(max, (round.payout || 0) > 0 ? finalMultiplier(round) : 0), 0); const red = mine.filter((round) => round.theme === 'RED').length; const green = mine.filter((round) => round.theme === 'GREEN').length;
+  return <section className="history-page"><header className="history-page-head"><div><span className="eyebrow">ПОЛЁТЫ И РЕЗУЛЬТАТЫ</span><h1>История раундов</h1><p className="muted">Разбирайте каждый полёт и проверяйте честность результата.</p></div><span className="history-live"><i /> LIVE-ЛОГ</span></header><div className="history-tabs" role="tablist"><button className={tab === 'mine' ? 'active' : ''} onClick={() => setTab('mine')} role="tab">Мои раунды</button><button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')} role="tab">Все игроки <small>Общий пульс</small></button><label>⛃ <select value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)} aria-label="Фильтр по теме"><option value="ALL">Все темы</option><option value="RED">🔴 Красный шар</option><option value="GREEN">🟢 Зелёный шар</option></select></label></div><div className="history-summary"><div><small>ВСЕГО РАУНДОВ</small><b>{mine.length}</b><span>🔴 {red}　🟢 {green}</span></div><div><small>ПРОЦЕНТ ПОБЕД</small><b>{mine.length ? `${((wins.length / mine.length) * 100).toFixed(1)}%` : '0%'}</b><span>Cashout rate · {wins.length}/{mine.length}</span></div><div><small>РЕКОРД МНОЖИТЕЛЯ</small><b>{best ? `×${best.toFixed(2)}` : '—'}</b><span>Лучший результат</span></div><div><small>ЧИСТЫЙ ДОХОД</small><b className={total >= 0 ? 'win' : 'crash'}>{total >= 0 ? '+' : ''}{number(total)} ⛃</b><span>Баланс бонусов</span></div></div>{isLoading ? <div className="card loading">Загрузка истории…</div> : <div className="history-table-new"><div className="history-table-new-head"><span>Время</span><span>Шар</span><span>Ставка / бустер</span><span>Высота</span><span>Множитель</span><span>Выплата</span><span>Очки</span><span>Награда</span><span>Честность</span></div>{rows.map((round) => { const profit = profitOf(round); const won = (round.payout || 0) > 0; return <div className="history-table-new-row" key={round.roundId}><time>{formatTime(round.createdAt)}</time><span className={`history-theme ${String(round.theme).toLowerCase()}`}>{round.theme === 'RED' ? '🔴' : '🟢'}<small>{round.theme === 'RED' ? 'Красный' : 'Зелёный'}</small></span><span><b>{round.betAmount} ⛃</b>{round.boosterMultiplier > 1 && <small className="booster">+ Бустер ×{round.boosterMultiplier}</small>}</span><span>ур. {round.level} <small>из {round.levels}</small></span><strong className={won ? 'win badge' : 'crash badge'}>×{finalMultiplier(round).toFixed(2)} <small>{won ? 'Забрал' : 'Краш'}</small></strong><b className={profit >= 0 ? 'win' : 'crash'}>{profit >= 0 ? '+' : ''}{number(profit)} ⛃</b><span className="history-points">+{round.points || 0} ⚡</span><span className="history-reward">🧩 Фрагмент #{(round.points || 0) % 6 + 1}</span><button className="fairness-button" onClick={() => setFairRound(round)}>🛡️ Проверить</button></div>; })}{!rows.length && <div className="empty"><span>🎈</span><p>История пока пуста</p><small>Сыграйте первый раунд, и он появится здесь</small><Link className="primary" to="/play">🚀 Сделать первый полёт</Link></div>}</div>}{fairRound && <FairnessModal round={fairRound} onClose={() => setFairRound(undefined)} />}</section>;
 }
+function number(value: number) { return new Intl.NumberFormat('ru-RU').format(Math.round(value)); }

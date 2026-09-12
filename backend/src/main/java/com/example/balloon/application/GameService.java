@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -21,6 +23,7 @@ import java.util.concurrent.*;
 
 @Service
 public class GameService implements CommandLineRunner {
+  private static final Logger log = LoggerFactory.getLogger(GameService.class);
   private static final long TICK_MS = 1000;
   private static final int HISTORY_LIMIT = 200;
   private static final long START_BALANCE = 1000;
@@ -340,9 +343,18 @@ public class GameService implements CommandLineRunner {
     round.flightOver = true;
     round.endedAt = Instant.now();
     // Награда выдаётся по итогам раунда независимо от выигрыша или проигрыша.
-    try { round.reward = accounts.awardPuzzleFragment(round.userId); } catch (Exception ignored) { /* демо-режим без аккаунтов */ }
+    try { round.reward = accounts.awardPuzzleFragment(round.userId); }
+    catch (Exception e) {
+      // Демо-режим может работать без аккаунта, но production-сбой не должен исчезать бесследно.
+      log.warn("Не удалось выдать ежедневный фрагмент пазла для раунда {} пользователя {}: {}",
+          round.id, round.userId, e.getMessage());
+    }
+    // Счётчик выигрышей определяет, на каком раунде показать предложение «Закрепи успех».
     if (round.payout > 0) {
-      try { round.winNumber = accounts.registerWin(round.userId); } catch (Exception ignored) { /* демо-режим без аккаунтов */ }
+      try { round.winNumber = accounts.registerWin(round.userId); }
+      catch (Exception e) {
+        log.warn("Не удалось учесть выигрыш раунда {} пользователя {}: {}", round.id, round.userId, e.getMessage());
+      }
     }
     round.balanceAfter = playerBalance(round);
     stopTicker(round.id);

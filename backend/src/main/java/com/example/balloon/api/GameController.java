@@ -5,6 +5,7 @@ import com.example.balloon.application.LeaderboardService;
 import com.example.balloon.application.LotteryService;
 import com.example.balloon.auth.AccountEntity;
 import com.example.balloon.auth.AccountService;
+import com.example.balloon.daily.DailyBonusService;
 import com.example.balloon.domain.Models.*;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -22,18 +23,23 @@ public class GameController {
   private final GameService game;
   private final AccountService accounts;
   private final LeaderboardService leaderboard;
+  private final DailyBonusService dailyBonus;
 
-  public GameController(GameService game, AccountService accounts, LeaderboardService leaderboard) {
+  public GameController(GameService game, AccountService accounts, LeaderboardService leaderboard, DailyBonusService dailyBonus) {
     this.game = game;
     this.accounts = accounts;
     this.leaderboard = leaderboard;
+    this.dailyBonus = dailyBonus;
   }
 
   public record StartRequest(@NotNull Theme theme, @NotBlank String betOptionId, String idempotencyKey) {}
 
   @GetMapping("/me")
   public ResponseEntity<?> me(@RequestHeader(value = "Authorization", required = false) String auth) {
-    try { return ResponseEntity.ok(AuthController.profile(accounts.require(auth))); }
+    try {
+      AccountEntity account = accounts.require(auth);
+      return ResponseEntity.ok(AuthController.profile(account, dailyBonus.state(account.getId())));
+    }
     catch (Exception e) { return ResponseEntity.status(401).body(Map.of("error", e.getMessage())); }
   }
 
@@ -53,8 +59,8 @@ public class GameController {
         Map.of("heading", "Cashout", "text", "Заберите выигрыш после первого уровня — коэффициент фиксируется сразу. Шар продолжает лететь до взрыва, и только потом открывается экран результата. Если шар долетел до последнего уровня, выплата начисляется автоматически."),
         Map.of("heading", "Бустеры", "text", "Бустер ставки ждёт на случайном уровне. Если шар долетит до него раньше, чем вы заберёте выигрыш, коэффициент умножается на значение бустера и начисляются дополнительные очки. После нажатия «Забрать» бустер не срабатывает."),
         Map.of("heading", "Цена бустера", "text", "Базовые коэффициенты тира с бустером ниже ровно настолько, насколько в среднем добавляет сам бустер, поэтому возврат игроку одинаков для всех вариантов ставки."),
-        Map.of("heading", "Награда за раунд", "text", "За каждый завершённый раунд — и выигранный, и проигранный — вы получаете случайный недостающий фрагмент пазла. Собрав все "
-            + AccountService.PUZZLE_FRAGMENTS + " фрагментов, вы получаете " + AccountService.PUZZLE_BONUS + " бонусных баллов, коллекция обнуляется и начинается следующий пазл. Прогресс виден в профиле."),
+        Map.of("heading", "Ежедневный билет", "text", "За каждый завершённый раунд — и выигранный, и проигранный — вы получаете случайный недостающий фрагмент сегодняшнего пазла. Собрав все "
+            + AccountService.PUZZLE_FRAGMENTS + " фрагментов за день, вы открываете один лотерейный билет. Его награда определяется сервером при стирании и начисляется на баланс."),
         Map.of("heading", "Закрепи успех", "text", "После удачного раунда с выигрышем от " + red.minWinAmount()
             + " ★ можно закрепить результат — купить лотерейные билеты за бонусные баллы со скидкой. Предложение приходит на каждый "
             + LotteryService.OFFER_EVERY_WINS + "-й выигрыш и закрывается само через " + red.popupTimeout()

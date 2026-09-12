@@ -25,6 +25,7 @@ export function RoundView() {
     if (!round || !flightOver || transitioning.current) return;
     transitioning.current = true;
     client.invalidateQueries({ queryKey: ['me'] });
+    client.invalidateQueries({ queryKey: ['daily-bonus'] });
     client.invalidateQueries({ queryKey: ['history'] });
     client.invalidateQueries({ queryKey: ['crashes'] });
     // Пауза, чтобы игрок увидел взрыв шара, и только затем открывается результат.

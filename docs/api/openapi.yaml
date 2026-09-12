@@ -37,6 +37,64 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GameConfig' }
+  /daily-bonus:
+    get:
+      tags: [player]
+      summary: Current daily puzzle and lottery ticket state
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Daily bonus state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyBonusState' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /daily-bonus/claim:
+    post:
+      tags: [player]
+      summary: Scratch today's ticket and credit its reward exactly once
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DailyBonusIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                idempotencyKey: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: Scratched ticket state (repeated calls return the same reward)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyBonusState' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /daily-bonus/scratch:
+    post:
+      tags: [player]
+      summary: Alias for /daily-bonus/claim
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DailyBonusIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                idempotencyKey: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: Scratched ticket state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailyBonusState' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /rounds:
     post:
       tags: [rounds]
@@ -168,6 +226,12 @@ components:
       name: Idempotency-Key
       required: true
       schema: { type: string, minLength: 8, maxLength: 128 }
+    DailyBonusIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      description: Optional correlation key. A completed ticket is idempotent even if the original response was lost.
+      schema: { type: string, maxLength: 128 }
   responses:
     Problem:
       description: RFC 7807 error
@@ -189,6 +253,35 @@ components:
         username: { type: string }
         role: { type: string, enum: [PLAYER, ADMIN] }
         balance: { type: integer, format: int64, minimum: 0 }
+        dailyBonus: { $ref: '#/components/schemas/DailyBonusState' }
+    DailyBonusState:
+      type: object
+      required: [date, day, progress, collected, total, ticket, ticketState, eligible, ticketAvailable, claimed, balance]
+      properties:
+        date: { type: string, format: date }
+        day: { type: string, format: date }
+        puzzleMask: { type: integer, minimum: 0 }
+        progress: { type: integer, minimum: 0, maximum: 6 }
+        collected: { type: integer, minimum: 0, maximum: 6 }
+        total: { type: integer, minimum: 1 }
+        puzzleFragments: { type: integer, minimum: 1 }
+        completed: { type: boolean }
+        ticket: { type: boolean }
+        ticketAvailable: { type: boolean }
+        ticketState: { type: string, enum: [LOCKED, AVAILABLE, SCRATCHED] }
+        eligible: { type: boolean }
+        claimed: { type: boolean }
+        reward:
+          type: integer
+          format: int64
+          minimum: 10
+          maximum: 2000
+          nullable: true
+          description: Server-selected integer reward from 10 to 2000; 2000 has a 0.001% probability.
+        claimedAt: { type: string, format: date-time, nullable: true }
+        nextResetAt: { type: string, format: date-time }
+        balance: { type: integer, format: int64, minimum: 0 }
+        balanceAfter: { type: integer, format: int64, minimum: 0 }
     StartRoundRequest:
       type: object
       required: [theme, betOptionId]

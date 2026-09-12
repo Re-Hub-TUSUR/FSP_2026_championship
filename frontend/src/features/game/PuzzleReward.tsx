@@ -9,11 +9,11 @@ export function PuzzleReward({ reward }: { reward: PuzzleAward }) {
   return <div className={`puzzle-reward ${reward.completed ? 'completed' : ''}`}>
     <span className="eyebrow">НАГРАДА ЗА РАУНД</span>
     <div className="puzzle-reward-body">
-      <img src={fragmentArt(reward.fragment)} alt={`Фрагмент ${reward.fragment + 1}`} />
+      <img src="/assets/daily-puzzle.png" alt={`Фрагмент ${reward.fragment + 1}`} className="daily-reward-piece" />
       <div>
         <b>Фрагмент {reward.fragment + 1}</b>
         <small>{reward.completed
-          ? `Пазл собран целиком — бонус ${reward.bonus} ★`
+          ? 'Пазл собран целиком — ежедневный билет готов'
           : `Собрано ${reward.collected} из ${reward.total}`}</small>
       </div>
       <div className="puzzle-progress" aria-hidden="true">

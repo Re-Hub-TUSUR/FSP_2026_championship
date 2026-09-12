@@ -33,8 +33,8 @@ public class LotteryService {
   public List<Pack> packs() {
     return List.of(
         new Pack("single", 1, TICKET_PRICE, "Пробный билет"),
-        new Pack("trio", 3, Math.round(TICKET_PRICE * 3 * 0.95), "Три билета"),
-        new Pack("five", 5, Math.round(TICKET_PRICE * 5 * 0.9), "Пять билетов"),
+        new Pack("trio", 3, 70, "Три билета"),
+        new Pack("five", 5, 110, "Пять билетов"),
         new Pack("ten", 10, Math.round(TICKET_PRICE * 10 * 0.8), "Десять билетов"));
   }
 

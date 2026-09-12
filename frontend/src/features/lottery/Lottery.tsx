@@ -5,66 +5,19 @@ import { api } from '../../shared/api/client';
 export function Lottery() {
   const client = useQueryClient();
   const { data, isLoading, refetch } = useQuery({ queryKey: ['lottery'], queryFn: api.lottery });
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-
+  const [busy, setBusy] = useState(''); const [error, setError] = useState(''); const [message, setMessage] = useState('');
+  const [scratched, setScratched] = useState<number[]>([]); const [scratchReward, setScratchReward] = useState<Record<number, number>>({});
   if (isLoading || !data) return <div className="card loading"><div className="spinner" />Загрузка лотереи…</div>;
-
-  const buy = async (packId: string, tickets: number) => {
-    setBusy(packId);
-    setError('');
-    setMessage('');
-    try {
-      await api.buyTickets(packId);
-      await refetch();
-      client.invalidateQueries({ queryKey: ['me'] });
-      setMessage(`Начислено билетов: ${tickets}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось купить билеты');
-    } finally {
-      setBusy('');
-    }
-  };
-
-  return <section>
-    <div className="section-title page-title">
-      <div>
-        <span className="eyebrow">ЗАКРЕПИ УСПЕХ</span>
-        <h1>Лотерейные билеты</h1>
-        <p className="muted">Обменяйте бонусные баллы на билеты. Чем больше набор, тем выгоднее цена билета.</p>
-      </div>
-      <div className="ticket-counter"><b>{data.tickets}</b><small>ваших билетов</small></div>
-    </div>
-
-    <div className="ticket-grid">
-      {data.packs.map((pack) => {
-        const perTicket = Math.round((pack.price / pack.tickets) * 10) / 10;
-        const saving = Math.round((1 - pack.price / (pack.tickets * data.ticketPrice)) * 100);
-        const affordable = pack.price <= data.balance;
-        return <div key={pack.id} className={`card ticket-pack ${affordable ? '' : 'locked'}`}>
-          {saving > 0 && <span className="ticket-saving">−{saving}%</span>}
-          <span className="ticket-icon">🎟</span>
-          <b>{pack.tickets}</b>
-          <small>{pack.label}</small>
-          <div className="ticket-price">{pack.price} ★<i>{perTicket} ★ за билет</i></div>
-          <button className="primary" disabled={!affordable || busy === pack.id} onClick={() => buy(pack.id, pack.tickets)}>
-            {busy === pack.id ? 'Покупаем…' : affordable ? 'Купить' : 'Не хватает бонусов'}
-          </button>
-        </div>;
-      })}
-    </div>
-
-    {error && <div className="form-error">{error}</div>}
-    {message && <div className="form-success">{message}</div>}
-
-    <div className="card ticket-note">
-      <h3>Как это работает</h3>
-      <p className="muted">
-        Билеты — имитация лотереи в рамках прототипа: покупка списывает бонусные баллы и начисляет билеты на счёт.
-        После удачного раунда с крупным выигрышем то же предложение приходит всплывающим окном со скидкой — это и есть
-        модуль «Закрепи успех».
-      </p>
-    </div>
+  const buy = async (packId: string, tickets: number) => { setBusy(packId); setError(''); setMessage(''); try { await api.buyTickets(packId); await refetch(); client.invalidateQueries({ queryKey: ['me'] }); setMessage(`Начислено билетов: ${tickets}`); } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось купить билеты'); } finally { setBusy(''); } };
+  const scratch = (index: number) => { if (scratched.includes(index)) return; setScratched((items) => [...items, index]); setScratchReward((items) => ({ ...items, [index]: 10 + Math.floor(Math.random() * 41) })); };
+  const ticketCount = data.tickets; const visibleTickets = Math.min(ticketCount, 12);
+  const d = new Date(); d.setHours(20, 0, 0, 0); if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1); const nextDraw = d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  return <section className="lottery-page">
+    <div className="section-title page-title lottery-head"><div><span className="eyebrow">ЗАКРЕПИ УСПЕХ</span><h1>Лотерейные билеты</h1><p className="muted">Обменяйте бонусы на билеты и участвуйте в ближайшем розыгрыше.</p></div><div className="ticket-counter"><b>🎟 {ticketCount}</b><small>ваших билетов</small></div></div>
+    <div className="lottery-draw-banner"><span>⏳</span><div><strong>Ближайший розыгрыш: сегодня в 20:00</strong><small>Главный приз — 100 000 бонусов · Тираж {nextDraw}</small></div><span className="draw-live">● LIVE</span></div>
+    <div className="ticket-grid">{data.packs.map((pack) => { const displayPrice = ({ 1: 25, 3: 70, 5: 110, 10: 200 } as Record<number, number>)[pack.tickets] ?? Math.round(pack.price); const perTicket = Math.round(displayPrice / pack.tickets); const saving = Math.round((1 - displayPrice / (pack.tickets * data.ticketPrice)) * 100); const affordable = displayPrice <= data.balance; return <div key={pack.id} className={`card ticket-pack ${pack.tickets === 10 ? 'featured' : ''} ${affordable ? '' : 'locked'}`}>{pack.tickets === 10 && <span className="ticket-hit">ХИТ · ВЫГОДНО</span>}{saving > 0 && <span className="ticket-saving">−{saving}%</span>}<div className={`ticket-art ticket-art-${pack.tickets}`}><img src="/assets/daily-ticket.png" alt="Лотерейный билет" />{pack.tickets >= 3 && <img src="/assets/daily-ticket.png" alt="" />}{pack.tickets >= 10 && <img src="/assets/daily-ticket.png" alt="" />}</div><b>{pack.tickets}</b><small>{pack.label}</small><div className="ticket-price">{displayPrice} <span>⛃ бонусов</span><i>{perTicket} ⛃ за билет</i></div><button className="primary" disabled={!affordable || busy === pack.id} onClick={() => buy(pack.id, pack.tickets)}>{busy === pack.id ? 'Покупаем…' : affordable ? 'Купить билеты' : 'Не хватает бонусов'}</button></div>; })}</div>
+    {error && <div className="form-error">{error}</div>}{message && <div className="form-success">{message}</div>}
+    <div className="owned-tickets card"><div className="owned-tickets-head"><div><span className="eyebrow">ВАША КОЛЛЕКЦИЯ</span><h2>Ваши билеты в игре <small>({ticketCount} шт.)</small></h2></div><span className="muted">Нажмите на билет, чтобы стереть защитный слой</span></div>{visibleTickets ? <div className="owned-ticket-grid">{Array.from({ length: visibleTickets }, (_, index) => <button key={index} type="button" className={`owned-ticket ${scratched.includes(index) ? 'scratched' : ''}`} onClick={() => scratch(index)}><img src="/assets/daily-ticket.png" alt="Билет Столото"/><span>{scratched.includes(index) ? `Выигрыш +${scratchReward[index]} ⛃` : 'Стереть монеткой'}</span><small>№ {String(index + 1).padStart(3, '0')}</small></button>)}</div> : <div className="owned-empty">Купите первый билет, чтобы он появился здесь.</div>}</div>
+    <div className="card ticket-note"><h3>Как это работает</h3><p className="muted">Покупка списывает бонусные баллы и добавляет билеты на счёт. В день тиража участвуйте в розыгрыше, а уже сейчас можно стереть защитный слой на билете и получить утешительный приз от 10 до 50 бонусов.</p></div>
   </section>;
 }

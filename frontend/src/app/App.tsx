@@ -46,7 +46,7 @@ function Header() {
     <header className="topbar">
       <div className="topbar-inner">
         <NavLink to={token ? '/play' : '/register'} className="brand">
-          <img src="/art/logo-100loto.svg" alt="100ЛОТО" />
+          <img src="/assets/logo-balloon.png" alt="Воздушный шар" />
           <span><small>ВОЗДУШНЫЙ ШАР</small></span>
         </NavLink>
         {token ? (

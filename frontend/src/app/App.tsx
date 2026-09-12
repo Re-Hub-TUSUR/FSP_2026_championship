@@ -59,14 +59,15 @@ function Header() {
               {data?.role === 'ADMIN' && <NavLink to="/admin" className={location.pathname === '/admin' ? 'active' : ''}><span>⚙️</span> Админка</NavLink>}
             </nav>
             <div className="header-account">
+              <DailyBonusPanel token={token} profileState={data?.dailyBonus} compact />
+              <div className="balance-group">
+                <div className="balance-pill"><span className="coin">⛃</span><span><small>БОНУСЫ</small><b>{displayedBalance}</b></span></div>
+                <button type="button" className="topup-button" onClick={addBonus} disabled={topupBusy} aria-label="Пополнить баланс на 500 бонусов" title="+500 бонусов">{topupBusy ? '…' : '+'}</button>
+              </div>
               <NavLink to={data?.role === 'ADMIN' ? '/admin' : '/profile'} className="account-link" title="Профиль">
                 <span className="account-avatar">{(data?.username || 'Д').slice(0, 1).toUpperCase()}</span>
                 <span className="account-name">{data?.username || 'Загрузка…'}</span>
               </NavLink>
-              <div className="balance-stack">
-                <div className="balance-pill"><span className="coin">★</span><span><small>ВАШ БАЛАНС</small><b>{data?.balance ?? '—'}</b></span></div>
-                <DailyBonusPanel token={token} profileState={data?.dailyBonus} />
-              </div>
               <button type="button" className="logout-button" onClick={logout}>Выйти</button>
             </div>
           </>

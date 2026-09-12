@@ -6,6 +6,8 @@ type DailyBonusPanelProps = {
   token: string | null;
   /** /me already contains the state; it lets the panel render immediately. */
   profileState?: DailyBonusState;
+  /** Render the daily collection as a compact header chip with a popover. */
+  compact?: boolean;
 };
 
 type ScratchPhase = 'idle' | 'scratching' | 'revealed';
@@ -13,7 +15,7 @@ type ScratchPhase = 'idle' | 'scratching' | 'revealed';
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 function rewardLabel(value: number | null | undefined) {
-  return value == null ? '' : `+${value.toLocaleString('ru-RU')} ★`;
+  return value == null ? '' : `+${value.toLocaleString('ru-RU')} ⛃`;
 }
 
 function resetLabel(nextResetAt?: string) {
@@ -25,6 +27,17 @@ function resetLabel(nextResetAt?: string) {
   return `сброс через ${hours}ч ${minutes}м`;
 }
 
+function countdownLabel(nextResetAt: string | undefined, now: number) {
+  if (!nextResetAt) return '—';
+  const remaining = new Date(nextResetAt).getTime() - now;
+  if (!Number.isFinite(remaining) || remaining <= 0) return 'обновится скоро';
+  const totalSeconds = Math.floor(remaining / 1000);
+  const hours = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+  const minutes = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
+}
+
 function stateSignature(state?: DailyBonusState) {
   return state ? `${state.day}:${state.claimed}:${state.reward ?? ''}` : '';
 }
@@ -34,13 +47,31 @@ function stateSignature(state?: DailyBonusState) {
  * компоненте: `api.claimDailyBonus` возвращает уже зафиксированный сервером
  * результат, а анимация лишь визуализирует стирание билета.
  */
-export function DailyBonusPanel({ token, profileState }: DailyBonusPanelProps) {
+export function DailyBonusPanel({ token, profileState, compact = false }: DailyBonusPanelProps) {
   const client = useQueryClient();
   const [phase, setPhase] = useState<ScratchPhase>('idle');
   const [revealedReward, setRevealedReward] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const mounted = useRef(true);
+  const popoverRef = useRef<HTMLDivElement>(null);
   useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => {
+    if (!compact) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [compact]);
+  useEffect(() => {
+    if (!compact || !popoverOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!popoverRef.current?.contains(event.target as Node)) setPopoverOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setPopoverOpen(false); };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => { document.removeEventListener('pointerdown', onPointerDown); document.removeEventListener('keydown', onKeyDown); };
+  }, [compact, popoverOpen]);
 
   const { data } = useQuery({
     queryKey: ['daily-bonus'],
@@ -112,6 +143,29 @@ export function DailyBonusPanel({ token, profileState }: DailyBonusPanelProps) {
   };
 
   if (!token) return null;
+
+  if (compact) {
+    return <div className="daily-puzzle-popover-wrap" ref={popoverRef}>
+      <button type="button" className={`daily-puzzle-chip ${state?.eligible ? 'ready' : ''}`} onClick={() => setPopoverOpen((open) => !open)} aria-expanded={popoverOpen} aria-haspopup="dialog" aria-label="Открыть прогресс ежедневного пазла">
+        <span className="daily-puzzle-chip-icon">🧩</span>
+        <b>{state ? `${state.collected}/${state.total}` : '—/—'}</b>
+        <small>{state?.nextResetAt ? `${Math.max(0, Math.floor((new Date(state.nextResetAt).getTime() - now) / 3_600_000))}ч` : '—'}</small>
+        <span className="daily-puzzle-chip-chevron" aria-hidden="true">⌄</span>
+      </button>
+      {popoverOpen && <div className="daily-puzzle-popover" role="dialog" aria-label="Ежедневный пазл">
+        <div className="daily-puzzle-popover-head"><div><strong>🧩 Ежедневный пазл</strong><small>Собирайте фрагменты за каждый раунд</small></div><button type="button" className="daily-puzzle-close" onClick={() => setPopoverOpen(false)} aria-label="Закрыть">×</button></div>
+        <div className="daily-puzzle-popover-progress"><span>Прогресс: <b>{state ? `${state.collected} из ${state.total} фрагментов` : 'загрузка…'}</b></span><b>{progress}%</b></div>
+        <div className="daily-progress-track" role="progressbar" aria-label="Прогресс дневного пазла" aria-valuemin={0} aria-valuemax={state?.total ?? 6} aria-valuenow={state?.collected ?? 0}><span style={{ width: `${progress}%` }} /></div>
+        <div className="daily-puzzle-popover-meta"><span>⏱ Сброс через</span><b>{countdownLabel(state?.nextResetAt, now)}</b></div>
+        <div className="daily-puzzle-popover-reward"><span>🎟 Награда</span><b>Лотерейный билет Столото</b><small>{state?.ticketAvailable ? 'Билет уже готов — сотрите его ниже' : 'Соберите все фрагменты, чтобы открыть билет'}</small></div>
+        {showTicket ? <button type="button" className={`daily-ticket ${phase === 'scratching' ? 'scratching' : ''}`} onClick={scratch} disabled={!canScratch} aria-label="Стереть ежедневный лотерейный билет">
+          <img src="/assets/daily-ticket.png" alt="Лотерейный билет" /><span className="daily-ticket-copy"><b>{phase === 'scratching' ? 'Стираем…' : 'Билет получен'}</b><small>{phase === 'scratching' ? 'Проверяем выигрыш' : 'Нажмите, чтобы стереть'}</small></span><span className="daily-scratch-cover" aria-hidden="true"><i>СТЕРЕТЬ</i></span>
+        </button> : reward != null ? <div className="daily-ticket daily-ticket-result" aria-live="polite"><img src="/assets/bonus-coin.png" alt="Монетка бонусов" /><span className="daily-ticket-copy"><b>Ваш выигрыш</b><strong>{rewardLabel(reward)}</strong></span></div> : null}
+        {error && <small className="daily-bonus-error" role="alert">{error}</small>}
+        <a className="daily-puzzle-profile-link" href="/profile" onClick={() => setPopoverOpen(false)}>Перейти в профиль к пазлу <span aria-hidden="true">→</span></a>
+      </div>}
+    </div>;
+  }
 
   return <section className={`daily-bonus-panel ${state?.eligible ? 'ready' : ''} ${phase !== 'idle' ? 'active' : ''}`} aria-label="Ежедневный бонус">
     <div className="daily-bonus-heading">

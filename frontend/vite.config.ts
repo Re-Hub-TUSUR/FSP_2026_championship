@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Если backend не запущен, запросы к /api падают и клиент переходит в демо-режим на localStorage.
+// Локальный fallback включается только явно через VITE_DEMO_MODE=true.
 export default defineConfig({
   plugins: [react()],
   server: {

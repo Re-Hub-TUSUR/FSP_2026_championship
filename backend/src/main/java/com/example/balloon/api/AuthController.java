@@ -52,8 +52,25 @@ public class AuthController {
 
   @PostMapping("/logout")
   public Map<String, Object> logout(@RequestHeader(value = "Authorization", required = false) String auth) {
-    service.logout(auth == null ? null : auth.replaceFirst("^Bearer ", ""));
+    service.logout(auth);
     return Map.of("ok", true);
+  }
+
+  /**
+   * Adds the fixed demo amount on the server.  The browser must never mutate
+   * its displayed balance locally, so this endpoint requires the same bearer
+   * authentication as all other account operations.
+   */
+  @PostMapping("/topup")
+  public ResponseEntity<?> topup(@RequestHeader(value = "Authorization", required = false) String auth) {
+    try {
+      AccountEntity account = service.require(auth);
+      return ResponseEntity.ok(profileWithDaily(service.topUp(account.getUsername())));
+    } catch (SecurityException e) {
+      return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+    } catch (Exception e) {
+      return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+    }
   }
 
   @GetMapping("/me")

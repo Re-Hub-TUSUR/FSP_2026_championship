@@ -1,10 +1,47 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../shared/api/client';
+import { api, type LeaderRow, type Tournament } from '../../shared/api/client';
 import { useStore } from '../../store';
 import { CrashHistory } from './CrashHistory';
 import { RulesDialog } from './RulesDialog';
+
+function tournamentRemaining(endsAt: string) {
+  const end = new Date(endsAt).getTime();
+  if (!Number.isFinite(end)) return '—';
+  const remaining = Math.max(0, end - Date.now());
+  const totalMinutes = Math.ceil(remaining / 60_000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  return days > 0 ? `${days} дн. ${hours} ч.` : `${hours} ч. ${minutes} мин.`;
+}
+
+function TournamentDialog({ tournament, leaders, loading, error, onClose }: {
+  tournament?: Tournament;
+  leaders?: LeaderRow[];
+  loading: boolean;
+  error: boolean;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-card tournament-modal" role="dialog" aria-modal="true" aria-labelledby="tournament-dialog-title" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-head">
+        <div><span className="eyebrow">🏆 ТУРНИР</span><h2 id="tournament-dialog-title">Турнирная таблица</h2></div>
+        <button className="modal-close" onClick={onClose} aria-label="Закрыть">×</button>
+      </div>
+      {tournament?.active ? <p className="muted">До окончания: <b>{tournamentRemaining(tournament.endsAt)}</b> · Призы: {tournament.firstPrize} / {tournament.secondPrize} / {tournament.thirdPrize} ★</p> : tournament ? <p className="muted">Турнир завершён{tournament.prizesPaid ? ', призы выплачены.' : '.'}</p> : <p className="muted">Синхронизируем данные турнира…</p>}
+      {loading ? <div className="loading"><div className="spinner" />Загрузка рейтинга…</div> : error ? <p className="tournament-dialog-error">Не удалось получить рейтинг. Откройте полный рейтинг позже.</p> : leaders?.length ? <div className="tournament-list">{leaders.slice(0, 10).map((row, index) => <div className={`tournament-row ${index < 3 ? 'top' : ''}`} key={row.id}><b>#{index + 1}</b><span>{row.username}</span><strong>{row.points} ★</strong></div>)}</div> : <p className="tournament-dialog-empty">Пока нет участников турнира.</p>}
+      <Link className="text-link" to="/leaderboard" onClick={onClose}>Открыть полный рейтинг →</Link>
+    </div>
+  </div>;
+}
 
 export function Play() {
   const nav = useNavigate();
@@ -14,10 +51,14 @@ export function Play() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [tournamentOpen, setTournamentOpen] = useState(false);
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data: config } = useQuery({ queryKey: ['config', theme], queryFn: () => api.config(theme) });
   const { data: red } = useQuery({ queryKey: ['config', 'RED'], queryFn: () => api.config('RED') });
   const { data: green } = useQuery({ queryKey: ['config', 'GREEN'], queryFn: () => api.config('GREEN') });
+  const { data: tournament } = useQuery({ queryKey: ['tournament'], queryFn: api.tournament, refetchInterval: 60000 });
+  const leadersQuery = useQuery({ queryKey: ['leaderboard'], queryFn: api.leaderboard, enabled: tournamentOpen, retry: false });
+  const { data: leaders } = leadersQuery;
 
   const options = config?.betOptions || [];
   const selected = options.find((option) => option.id === bet);
@@ -90,7 +131,7 @@ export function Play() {
 
       <div className="section-title bet-title">
         <div><span className="eyebrow">ШАГ 2</span><h2>Выберите ставку</h2></div>
-        <button className="link-button" onClick={() => setRulesOpen(true)}>? Правила игры</button>
+        <div><button className="link-button tournament-trigger" onClick={() => setTournamentOpen(true)}>🏆 {tournament?.active ? 'Турнир' : 'Рейтинг'}</button> <button className="link-button" onClick={() => setRulesOpen(true)}>? Правила игры</button></div>
       </div>
       <div className="bet-grid">
         {options.map((option) => {
@@ -135,5 +176,6 @@ export function Play() {
     </section>
 
     {rulesOpen && <RulesDialog onClose={() => setRulesOpen(false)} />}
+    {tournamentOpen && <TournamentDialog tournament={tournament} leaders={leaders} loading={leadersQuery.isLoading} error={leadersQuery.isError} onClose={() => setTournamentOpen(false)} />}
   </div>;
 }

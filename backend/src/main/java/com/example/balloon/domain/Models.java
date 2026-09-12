@@ -151,6 +151,23 @@ public final class Models {
     public volatile PuzzleAward reward;
     /** Порядковый номер выигрыша игрока; 0 — раунд проигран. */
     public volatile int winNumber = 0;
+    /**
+     * Персональное предложение «Закрепи успех» уже было принято для этого
+     * раунда.  Поле находится на самом раунде, чтобы две параллельные
+     * попытки принять предложение можно было сериализовать одним монитором
+     * раунда (и не выдать билеты дважды).
+     */
+    public volatile boolean offerAccepted = false;
+    /** Guard against duplicate account points settlement at flight end. */
+    public volatile boolean pointsSettled = false;
+    /** True while end-of-flight account/reward effects are being applied. */
+    public volatile boolean settling = false;
+    /** A completed reward attempt may legitimately produce no fragment (null). */
+    public volatile boolean rewardSettled = false;
+    /** Guards the per-player win counter when a failed settlement is retried. */
+    public volatile boolean winSettled = false;
+    /** All required end-of-flight side effects have completed successfully. */
+    public volatile boolean settlementComplete = false;
 
     public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
                  String seed, String commitment, int popLevel, int boosterLevel, double[] ladder) {
@@ -182,8 +199,12 @@ public final class Models {
 
     public double nextMultiplier() { return multiplierAt(Math.min(level + 1, levels())); }
 
-    /** Коэффициент, на котором шар лопнул; если долетел до вершины — максимальный коэффициент темы. */
-    public double crashMultiplier() { return ladder[Math.min(popLevel, levels())]; }
+    /**
+     * Коэффициент, на котором шар лопнул; если долетел до вершины —
+     * максимальный коэффициент темы.  Если бустер уже активировался до
+     * точки crash, итоговый коэффициент обязан отражать его множитель.
+     */
+    public double crashMultiplier() { return multiplierAt(Math.min(popLevel, levels())); }
 
     /** Лучшая выплата, которую можно было забрать в этом раунде. */
     public long potentialMax() {

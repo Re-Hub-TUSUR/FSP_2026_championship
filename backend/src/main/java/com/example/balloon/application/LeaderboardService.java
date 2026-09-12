@@ -4,13 +4,18 @@ import com.example.balloon.auth.*;
 import com.example.balloon.domain.Models.Round;
 import org.springframework.stereotype.Service;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.*;
 
 @Service
 public class LeaderboardService {
   public record Entry(String id, String username, long balance, int rank, int level, long points, double multiplier, int rounds, int cashouts, long trend, Instant updatedAt) {}
+  public record Tournament(Instant startedAt, Instant endsAt, boolean active, long firstPrize, long secondPrize, long thirdPrize, boolean prizesPaid) {}
   private final GameService game; private final AccountService accounts; private volatile Map<String,Integer> previous = Map.of();
+  private final Instant tournamentStarted = Instant.now(); private volatile boolean prizesPaid;
   public LeaderboardService(GameService game, AccountService accounts){this.game=game;this.accounts=accounts;}
+  public Tournament tournament(){ Instant end=tournamentStarted.plus(Duration.ofDays(14)); return new Tournament(tournamentStarted,end,Instant.now().isBefore(end),1000,500,250,prizesPaid); }
+  public synchronized void settleTournament(){ if(prizesPaid || Instant.now().isBefore(tournament().endsAt())) return; List<Entry> top=entries("","score",0,3); long[] prizes={1000,500,250}; for(int i=0;i<top.size();i++){ try { accounts.adjust(top.get(i).id(),prizes[i],0,"tournament","Tournament prize #"+(i+1)); } catch(Exception ignored){} } prizesPaid=true; }
   public synchronized List<Entry> entries(String query,String sort,int offset,int limit){
     Map<String,Summary> grouped=new HashMap<>();
     for(Round r:game.allRounds()){ Summary s=grouped.computeIfAbsent(r.userId,k->new Summary()); s.points+=r.points; s.rounds++; s.multiplier=Math.max(s.multiplier,r.cashedOutMultiplier==null?r.multiplier:r.cashedOutMultiplier); if(r.payout>0)s.cashouts++; s.updated=r.endedAt==null?r.startedAt:r.endedAt; }

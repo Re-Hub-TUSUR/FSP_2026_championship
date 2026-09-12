@@ -63,7 +63,9 @@ public class LotteryController {
                                  @RequestHeader(value = "Authorization", required = false) String auth) {
     try {
       AccountEntity account = accounts.require(auth);
-      return ResponseEntity.ok(lottery.offerFor(game.get(roundId), account));
+      // GameService hides ownership mismatches as 404 to avoid leaking round
+      // existence to another player.
+      return ResponseEntity.ok(lottery.offerFor(game.getOwned(roundId, account.getUsername()), account));
     } catch (SecurityException e) {
       return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
     } catch (NoSuchElementException e) {
@@ -76,10 +78,12 @@ public class LotteryController {
                                   @RequestHeader(value = "Authorization", required = false) String auth) {
     try {
       AccountEntity account = accounts.require(auth);
-      AccountEntity updated = lottery.acceptOffer(account.getUsername(), game.get(request.roundId()));
+      AccountEntity updated = lottery.acceptOffer(account.getUsername(), game.getOwned(request.roundId(), account.getUsername()));
       return ResponseEntity.ok(Map.of("tickets", updated.getLotteryTickets(), "balance", updated.getBalance()));
     } catch (SecurityException e) {
       return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+    } catch (NoSuchElementException e) {
+      return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
     } catch (Exception e) {
       return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
     }

@@ -73,7 +73,9 @@ public class GameController {
                                  @RequestHeader(value = "Idempotency-Key", required = false) String key) {
     try {
       AccountEntity user = accounts.require(auth);
-      String idempotencyKey = key != null ? key : req.idempotencyKey();
+      // A proxy may send an empty header.  In that case use the body key
+      // rather than silently disabling idempotency for this start request.
+      String idempotencyKey = key != null && !key.isBlank() ? key : req.idempotencyKey();
       return ResponseEntity.status(HttpStatus.CREATED).body(toMap(game.startIdempotent(user.getUsername(), req.theme(), req.betOptionId(), idempotencyKey)));
     } catch (SecurityException e) {
       return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
@@ -84,7 +86,9 @@ public class GameController {
 
   @GetMapping("/rounds/history")
   public List<Map<String, Object>> history(@RequestParam(defaultValue = "50") int limit) {
-    return game.history().stream().limit(Math.max(1, Math.min(100, limit))).map(this::toMap).toList();
+    // История по условию общая для всех игроков, но приватные поля (seed,
+    // commitment, баланс и награда) не должны раскрываться в общей ленте.
+    return game.history().stream().limit(Math.max(1, Math.min(100, limit))).map(this::toHistoryMap).toList();
   }
 
   /** Компактная лента «Прошлые игры»: коэффициенты взрыва завершённых раундов всех игроков. */
@@ -102,17 +106,37 @@ public class GameController {
   }
 
   @GetMapping("/rounds/{id}")
-  public Map<String, Object> get(@PathVariable String id) { return toMap(game.get(id)); }
+  public ResponseEntity<?> get(@PathVariable String id,
+                               @RequestHeader(value = "Authorization", required = false) String auth) {
+    try {
+      AccountEntity account = accounts.require(auth);
+      return ResponseEntity.ok(toMap(game.getOwned(id, account.getUsername())));
+    } catch (SecurityException e) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", e.getMessage()));
+    }
+  }
 
   @PostMapping("/rounds/{id}/cashout")
   public ResponseEntity<?> cashout(@PathVariable String id, @RequestHeader(value = "Authorization", required = false) String auth) {
-    try { accounts.require(auth); return ResponseEntity.ok(toMap(game.cashout(id))); }
+    try {
+      AccountEntity account = accounts.require(auth);
+      return ResponseEntity.ok(toMap(game.cashoutOwned(id, account.getUsername())));
+    }
     catch (SecurityException e) { return ResponseEntity.status(401).body(Map.of("error", e.getMessage())); }
+    catch (NoSuchElementException e) { return ResponseEntity.status(404).body(Map.of("error", e.getMessage())); }
     catch (Exception e) { return ResponseEntity.badRequest().body(Map.of("error", e.getMessage())); }
   }
 
   @GetMapping("/rounds/{id}/proof")
-  public Map<String, Object> proof(@PathVariable String id) { return game.proof(id); }
+  public ResponseEntity<?> proof(@PathVariable String id,
+                                 @RequestHeader(value = "Authorization", required = false) String auth) {
+    try {
+      AccountEntity account = accounts.require(auth);
+      return ResponseEntity.ok(game.proofOwned(id, account.getUsername()));
+    } catch (SecurityException e) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", e.getMessage()));
+    }
+  }
 
   @GetMapping("/leaderboard")
   public Map<String, Object> leaderboard(@RequestParam(defaultValue = "") String q,
@@ -120,6 +144,13 @@ public class GameController {
                                          @RequestParam(defaultValue = "0") int offset,
                                          @RequestParam(defaultValue = "50") int limit) {
     return Map.of("items", leaderboard.entries(q, sort, offset, limit), "updatedAt", Instant.now());
+  }
+
+  @GetMapping("/tournament")
+  public Map<String,Object> tournament() {
+    leaderboard.settleTournament();
+    var t = leaderboard.tournament();
+    return Map.of("startedAt", t.startedAt(), "endsAt", t.endsAt(), "active", t.active(), "firstPrize", t.firstPrize(), "secondPrize", t.secondPrize(), "thirdPrize", t.thirdPrize(), "prizesPaid", t.prizesPaid());
   }
 
   @GetMapping("/admin/config")
@@ -174,7 +205,13 @@ public class GameController {
 
     double[] weights = doubles(body.get("boosterWeights"));
     if (weights.length == 0) weights = old.boosterWeights();
-    double[] ladderOverride = doubles(body.get("ladderOverride"));
+    // Partial admin updates must not silently erase a manually published
+    // ladder.  An explicitly supplied empty list remains the intentional
+    // command to return to the formula-based ladder.
+    double[] previousLadder = old.ladderOverride();
+    double[] ladderOverride = body.containsKey("ladderOverride")
+        ? doubles(body.get("ladderOverride"))
+        : previousLadder == null ? new double[0] : Arrays.copyOf(previousLadder, previousLadder.length);
 
     return new Config(theme,
         text(body, "gameId", old.gameId()),
@@ -298,6 +335,37 @@ public class GameController {
       map.put("seed", round.seed);
       if (round.reward != null) map.put("reward", round.reward);
     }
+    return map;
+  }
+
+  /** Public history projection; ownership-sensitive fields stay private. */
+  private Map<String, Object> toHistoryMap(Round round) {
+    Map<String, Object> map = new LinkedHashMap<>();
+    map.put("roundId", round.id);
+    map.put("state", round.state);
+    map.put("theme", round.theme());
+    map.put("betAmount", round.betAmount);
+    map.put("boosterMultiplier", round.boosterMultiplier);
+    map.put("boosterLevel", round.boosterLevel);
+    map.put("boosterActivated", round.boosterActivated);
+    map.put("cashedOut", round.cashedOut());
+    map.put("flightOver", round.flightOver);
+    map.put("levels", round.levels());
+    map.put("level", round.level);
+    map.put("multiplier", round.multiplier);
+    map.put("nextMultiplier", round.nextMultiplier());
+    map.put("potentialPayout", Math.round(round.betAmount * round.multiplier));
+    map.put("payout", round.payout);
+    map.put("profit", round.profit());
+    map.put("points", round.points);
+    if (round.cashedOutMultiplier != null) map.put("cashedOutMultiplier", round.cashedOutMultiplier);
+    if (round.finished()) {
+      map.put("popLevel", round.popLevel);
+      map.put("crashMultiplier", round.crashMultiplier());
+      map.put("potentialMax", round.potentialMax());
+    }
+    map.put("createdAt", round.startedAt);
+    if (round.endedAt != null) map.put("endedAt", round.endedAt);
     return map;
   }
 }

@@ -34,7 +34,7 @@ export function Landing() {
   return <div className="landing">
     <div className="landing-sky"><div className="landing-cloud cloud-a"/><div className="landing-cloud cloud-b"/><div className="landing-cloud cloud-c"/><span className="bird bird-a">⌁</span><span className="bird bird-b">⌁</span></div>
     <header className="landing-header">
-      <a className="landing-brand" href="/"><img src="/art/logo-100loto.svg" alt="100ЛОТО"/><span>ВОЗДУШНЫЙ ШАР <b>· CRASH GAME</b></span></a>
+      <a className="landing-brand" href="/"><img src="/assets/logo-balloon.png" alt="Воздушный шар"/><span>ВОЗДУШНЫЙ ШАР <b>· CRASH GAME</b></span></a>
       <div className="landing-ticker"><span>🚀 Иван забрал <b>x4.20</b></span><span>💥 Краш на <b>x1.15</b></span></div>
       <div className="landing-actions"><button className="sound-button" onClick={() => setSound(!sound)} aria-label={sound ? 'Выключить звук' : 'Включить звук'}>{sound ? '🔊' : '🔇'}</button><button className="login-link" onClick={() => { setTab('login'); setModal(true); }}>Войти</button><button className="yellow-button small" onClick={() => { setTab('register'); setModal(true); }}>Регистрация</button></div>
     </header>

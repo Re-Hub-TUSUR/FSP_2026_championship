@@ -452,3 +452,54 @@ p { margin-block: .7rem; }
   .account-name{display:none}
   .logout-button{padding:9px 10px}
 }
+
+/* The supplied balloon artwork is a full scene rather than a horizontal mark.
+   Use it as a compact, consistently cropped brand mark everywhere it appears. */
+.brand img,
+.landing-brand img,
+.footer-brand img,
+.modal-logo img {
+  content: url('/assets/logo-balloon.png');
+  object-fit: cover;
+  object-position: 18% 40%;
+  border-radius: 11px;
+  filter: none;
+}
+.brand img { width: 54px; height: 42px; flex: 0 0 54px; }
+.landing-brand img { width: 66px; height: 48px; }
+.footer-brand img { width: 86px; height: 60px; }
+.modal-logo img { width: 132px; height: 88px; }
+@media (max-width: 760px) {
+  .brand img { width: 48px; height: 38px; flex-basis: 48px; }
+  .landing-brand img { width: 60px; height: 44px; }
+  .footer-brand img { width: 78px; height: 54px; }
+}
+
+/* Full-bleed app shell: keep a comfortable gutter, but don't cap the page
+   itself at a narrow 1180px window on wide displays. Feature cards and grids
+   can now use the available viewport width. */
+.topbar-inner,
+.page,
+.landing-header,
+.landing-content,
+.rules-guide,
+.leader-page {
+  max-width: none;
+}
+.page {
+  padding-inline: clamp(24px, 3vw, 56px);
+}
+.landing-header,
+.landing-content {
+  padding-inline: clamp(24px, 3vw, 56px);
+}
+.internal-footer {
+  margin-left: calc(-1 * clamp(24px, 3vw, 56px));
+  margin-right: calc(-1 * clamp(24px, 3vw, 56px));
+}
+@media (max-width: 760px) {
+  .page { padding-inline: 14px; }
+  .landing-header,
+  .landing-content { padding-inline: 18px; }
+  .internal-footer { margin-left: -14px; margin-right: -14px; }
+}

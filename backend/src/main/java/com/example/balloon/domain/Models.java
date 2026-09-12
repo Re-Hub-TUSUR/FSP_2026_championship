@@ -7,8 +7,18 @@ import java.util.Arrays;
 public final class Models {
   public static final double MAX_MULTIPLIER = 10_000;
 
+  /**
+   * Ожидаемая прибавка коэффициента от бустера, одинаковая для всех тиров.
+   * Чем сильнее бустер, тем реже он выпадает: (множитель − 1) × шанс появления = BOOSTER_BUDGET.
+   * Благодаря этому возврат игроку не зависит от выбранного варианта ставки.
+   */
+  public static final double BOOSTER_BUDGET = 0.5;
+
   public enum Theme { RED, GREEN }
   public enum RoundState { CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED }
+
+  /** Награда за раунд: фрагмент пазла и состояние коллекции игрока. */
+  public record PuzzleAward(int fragment, int collected, int total, boolean completed, long bonus) {}
 
   /**
    * Настройки игры, которыми управляет администратор без выпуска новой версии.
@@ -89,6 +99,31 @@ public final class Models {
 
     /** Ожидаемый возврат при выходе на уровне: шанс долететь × коэффициент уровня. */
     public double expectedReturnAt(int level) { return survivalAt(level) * ladder()[level]; }
+
+    /** Шанс, что бустер вообще появится в раунде: сильный бустер выпадает реже. */
+    public double boosterAppearChance(double booster) {
+      return booster <= 1 ? 0 : Math.min(1, BOOSTER_BUDGET / (booster - 1));
+    }
+
+    /**
+     * Лестница для ставки с бустером. Ожидаемый вклад бустера заранее вычитается из
+     * базовых коэффициентов, поэтому возврат игроку одинаков для всех вариантов ставки.
+     * Вклад одинаков для всех тиров, значит и лестница у них общая.
+     */
+    public double[] ladderForBooster(double booster) {
+      double[] base = ladder();
+      if (booster <= 1) return base;
+      double[] probabilities = boosterProbabilities();
+      double[] priced = new double[base.length];
+      priced[0] = 1.0;
+      double reached = 0;
+      for (int level = 1; level <= levels; level++) {
+        reached += probabilities[level - 1];
+        double value = Math.round(base[level] / (1 + BOOSTER_BUDGET * reached) * 100.0) / 100.0;
+        priced[level] = Math.max(priced[level - 1] + 0.01, value);
+      }
+      return priced;
+    }
   }
 
   public static class Round {
@@ -110,6 +145,9 @@ public final class Models {
     public volatile boolean boosterActivated = false;
     public volatile long balanceAfter;
     public volatile Instant endedAt;
+    /** Полёт окончен: шар лопнул или долетел до вершины. Выигрыш мог быть зафиксирован раньше. */
+    public volatile boolean flightOver = false;
+    public volatile PuzzleAward reward;
 
     public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
                  String seed, String commitment, int popLevel, int boosterLevel, double[] ladder) {
@@ -127,8 +165,33 @@ public final class Models {
 
     public Theme theme() { return config.theme(); }
     public int levels() { return config.levels(); }
-    public boolean finished() { return state == RoundState.CRASHED || state == RoundState.CASHED_OUT || state == RoundState.SETTLED; }
-    public double nextMultiplier() { return level < levels() ? ladder[level + 1] : ladder[levels()]; }
+    public boolean finished() { return flightOver; }
+    public boolean cashedOut() { return cashedOutMultiplier != null; }
     public long profit() { return payout - betAmount; }
+
+    public boolean hasBooster() { return boosterLevel > 0 && boosterMultiplier > 1; }
+
+    /** Коэффициент уровня с учётом сработавшего бустера. */
+    public double multiplierAt(int level) {
+      double value = ladder[Math.max(0, Math.min(level, levels()))];
+      return boosterActivated && level >= boosterLevel ? Math.round(value * boosterMultiplier * 100.0) / 100.0 : value;
+    }
+
+    public double nextMultiplier() { return multiplierAt(Math.min(level + 1, levels())); }
+
+    /** Коэффициент, на котором шар лопнул; если долетел до вершины — максимальный коэффициент темы. */
+    public double crashMultiplier() { return ladder[Math.min(popLevel, levels())]; }
+
+    /** Лучшая выплата, которую можно было забрать в этом раунде. */
+    public long potentialMax() {
+      int best = Math.min(popLevel - 1, levels());
+      return best < 1 ? 0 : Math.max(1, Math.round(betAmount * multiplierBefore(best)));
+    }
+
+    /** Коэффициент уровня так, как если бы бустер успел сработать до него. */
+    private double multiplierBefore(int level) {
+      double value = ladder[level];
+      return hasBooster() && level >= boosterLevel ? Math.round(value * boosterMultiplier * 100.0) / 100.0 : value;
+    }
   }
 }

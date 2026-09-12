@@ -9,5 +9,13 @@ public class AuthController {
  @PostMapping("/login") public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req){try{String token=service.login(req.username(),req.password());return ResponseEntity.ok(Map.of("token",token,"user",profile(service.current(token))));}catch(Exception e){return ResponseEntity.status(401).body(Map.of("error",e.getMessage()));}}
  @PostMapping("/logout") public Map<String,Object> logout(@RequestHeader(value="Authorization",required=false) String auth){service.logout(auth==null?null:auth.replaceFirst("^Bearer ",""));return Map.of("ok",true);}
  @GetMapping("/me") public ResponseEntity<?> me(@RequestHeader(value="Authorization",required=false) String auth){try{return ResponseEntity.ok(profile(service.require(auth)));}catch(Exception e){return ResponseEntity.status(401).body(Map.of("error",e.getMessage()));}}
- static Map<String,Object> profile(AccountEntity a){return Map.of("id",a.getId(),"username",a.getUsername(),"role",a.getRole(),"blocked",a.isBlocked(),"balance",a.getBalance(),"points",a.getPoints(),"level",a.getLevel(),"createdAt",a.getCreatedAt());}
+ static Map<String,Object> profile(AccountEntity a){
+  Map<String,Object> profile=new LinkedHashMap<>();
+  profile.put("id",a.getId()); profile.put("username",a.getUsername()); profile.put("role",a.getRole());
+  profile.put("blocked",a.isBlocked()); profile.put("balance",a.getBalance()); profile.put("points",a.getPoints());
+  profile.put("level",a.getLevel()); profile.put("createdAt",a.getCreatedAt());
+  profile.put("puzzleMask",a.getPuzzleMask()); profile.put("puzzleFragments",AccountService.PUZZLE_FRAGMENTS);
+  profile.put("puzzleBonus",AccountService.PUZZLE_BONUS); profile.put("puzzlesCompleted",a.getPuzzlesCompleted());
+  return profile;
+ }
 }

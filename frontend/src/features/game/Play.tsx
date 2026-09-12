@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../shared/api/client';
 import { useStore } from '../../store';
+import { CrashHistory } from './CrashHistory';
+import { RulesDialog } from './RulesDialog';
 
 export function Play() {
   const nav = useNavigate();
@@ -11,12 +13,26 @@ export function Play() {
   const [bet, setBet] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data: config } = useQuery({ queryKey: ['config', theme], queryFn: () => api.config(theme) });
   const { data: red } = useQuery({ queryKey: ['config', 'RED'], queryFn: () => api.config('RED') });
   const { data: green } = useQuery({ queryKey: ['config', 'GREEN'], queryFn: () => api.config('GREEN') });
 
   const options = config?.betOptions || [];
   const selected = options.find((option) => option.id === bet);
+  const balance = me?.balance ?? 0;
+  const affordable = (amount: number) => amount <= balance;
+
+  const chooseBet = (optionId: string, amount: number) => {
+    if (!affordable(amount)) {
+      setBet('');
+      setError('Не хватает бонусов');
+      return;
+    }
+    setError('');
+    setBet(optionId);
+  };
   const levels = config?.levels ?? 12;
   const ladder = config?.levelTable || [];
   const maxMultiplier = config?.maxMultiplier;
@@ -56,6 +72,8 @@ export function Play() {
       </div>
     </section>
 
+    <CrashHistory />
+
     <section className="card setup-card">
       <div className="section-title">
         <div><span className="eyebrow">ШАГ 1</span><h2>Выберите тему</h2></div>
@@ -72,19 +90,35 @@ export function Play() {
 
       <div className="section-title bet-title">
         <div><span className="eyebrow">ШАГ 2</span><h2>Выберите ставку</h2></div>
-        <span className="muted">Бустер умножает бонусные очки</span>
+        <button className="link-button" onClick={() => setRulesOpen(true)}>? Правила игры</button>
       </div>
       <div className="bet-grid">
-        {options.map((option) => <button key={option.id} className={`bet-option ${bet === option.id ? 'selected' : ''}`} onClick={() => setBet(option.id)}>
-          <span className="bet-star">★</span><b>{option.amount}</b><small>очков</small><strong>×{option.boosterMultiplier}</strong>
-        </button>)}
+        {options.map((option) => {
+          const locked = !affordable(option.amount);
+          return <button
+            key={option.id}
+            className={`bet-option ${bet === option.id ? 'selected' : ''} ${locked ? 'locked' : ''}`}
+            aria-disabled={locked}
+            title={locked ? 'Не хватает бонусов' : `Ставка ${option.amount}, бустер ×${option.boosterMultiplier}`}
+            onClick={() => chooseBet(option.id, option.amount)}
+          >
+            <span className="bet-star">★</span><b>{option.amount}</b><small>очков</small><strong>×{option.boosterMultiplier}</strong>
+            {option.boosterMultiplier > 1 && option.boosterChance !== undefined && <em className="bet-chance">бустер в {Math.round(option.boosterChance * 100)}% раундов</em>}
+            {locked && <em className="bet-locked">не хватает</em>}
+          </button>;
+        })}
       </div>
 
       {ladder.length > 0 && <div className="ladder">
-        <div className="ladder-head"><span className="eyebrow">ЛЕСТНИЦА КОЭФФИЦИЕНТОВ</span><span className="muted">коэффициент растёт экспоненциально, риск взрыва — вместе с ним</span></div>
+        <div className="ladder-head">
+          <span className="eyebrow">ЛЕСТНИЦА КОЭФФИЦИЕНТОВ</span>
+          <span className="muted">{selected && selected.boosterMultiplier > 1
+            ? `со ставкой ×${selected.boosterMultiplier} коэффициенты ниже, зато на уровне бустера умножаются — возврат игроку одинаков`
+            : 'коэффициент растёт экспоненциально, риск взрыва — вместе с ним'}</span>
+        </div>
         <div className="ladder-strip">
-          {ladder.map((row) => <div key={row.level} className="ladder-step">
-            <b>×{row.multiplier.toFixed(2)}</b>
+          {ladder.map((row, index) => <div key={row.level} className="ladder-step">
+            <b>×{(selected?.ladder?.[index] ?? row.multiplier).toFixed(2)}</b>
             <small>ур. {row.level}</small>
             <i>{Math.round(row.popChance * 100)}%</i>
           </div>)}
@@ -99,5 +133,7 @@ export function Play() {
         <button className="primary cta" disabled={!bet || busy} onClick={start}>{busy ? 'Подготовка…' : 'Запустить полёт'} <span>→</span></button>
       </div>
     </section>
+
+    {rulesOpen && <RulesDialog onClose={() => setRulesOpen(false)} />}
   </div>;
 }

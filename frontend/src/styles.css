@@ -176,6 +176,68 @@ p { margin-block: .7rem; }
 @media (max-width: 760px) { .leader-personal { grid-template-columns: 1fr 1fr; gap: 14px; }.leader-personal-main { grid-column: 1 / -1; }.leader-personal-stat { padding-left: 10px; }.leader-toolbar { align-items: stretch; flex-direction: column; }.leader-controls { justify-content: space-between; }.leader-podium { gap: 8px; }.podium-card { min-height: 190px; padding-inline: 7px; }.podium-card-1 { min-height: 212px; }.leader-table { overflow-x: auto; }.leader-table-head, .leader-table-row { min-width: 700px; }.leader-foot { flex-direction: column; gap: 5px; } }
 @media (max-width: 470px) { .leader-hero .live-pill { margin-top: 0; }.leader-podium { grid-template-columns: 1fr; align-items: stretch; }.podium-card, .podium-card-1 { min-height: 0; padding: 15px; }.podium-card-1 { order: 1; }.podium-card-2 { order: 2; }.podium-card-3 { order: 3; }.podium-card .leader-avatar { width: 44px; height: 44px; margin-bottom: 6px; }.podium-score { margin-top: 8px; }.leader-sort { justify-content: space-between; flex: 1; }.leader-search kbd { display: none; } }
 
+.points-gain{position:absolute;top:38%;left:50%;transform:translateX(-50%);color:#2fbd83;font-size:1.5rem;font-weight:800;text-shadow:0 2px 14px #00000055;pointer-events:none;animation:float-up 1.1s ease-out forwards}
+@keyframes float-up{0%{opacity:0;transform:translate(-50%,10px)}20%{opacity:1}100%{opacity:0;transform:translate(-50%,-46px)}}
+.cashout-wrap{position:relative;display:inline-block}
+.cashout-hint{position:absolute;bottom:calc(100% + 14px);left:50%;transform:translateX(-50%);padding:9px 14px;border-radius:12px;background:#1b2440;color:#fff;font-size:.76rem;font-weight:700;white-space:nowrap;box-shadow:0 10px 24px #11182733;animation:pulse 1.8s ease-in-out infinite}
+.cashout-hint i{position:absolute;top:100%;left:50%;transform:translateX(-50%);border:7px solid transparent;border-top-color:#1b2440}
+@media(max-width:760px){.cashout-wrap{display:block}.cashout-hint{white-space:normal;width:min(260px,80vw);text-align:center}}
+.puzzle-reward{margin:18px 0 0;padding:14px 16px;background:#f8fafd;border:1px solid #e6ebf4;border-radius:14px;text-align:left}
+.puzzle-reward.completed{background:#fff8ec;border-color:#f0dcb8}
+.puzzle-reward-body{display:flex;align-items:center;gap:14px;margin-top:9px;flex-wrap:wrap}
+.puzzle-reward-body img{width:44px;height:44px}
+.puzzle-reward-body b{display:block;color:#22304d;font-size:.95rem}
+.puzzle-reward-body small{color:#7f899c;font-size:.78rem}
+.puzzle-progress{display:flex;gap:5px;margin-left:auto}
+.puzzle-progress i{width:16px;height:6px;border-radius:3px;background:#e1e6f0}
+.puzzle-progress i.on{background:#e3b23f}
+.puzzle-card{grid-column:1/-1}
+.puzzle-collection{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px}
+.puzzle-slot{width:74px;padding:10px 0;text-align:center;background:#f4f6fb;border:1px dashed #d9e0ec;border-radius:12px}
+.puzzle-slot img{width:34px;height:34px;opacity:.22;filter:grayscale(1)}
+.puzzle-slot small{display:block;margin-top:5px;color:#a3acbd;font-size:.68rem;font-weight:800}
+.puzzle-slot.has{background:#fff8ec;border:1px solid #f0dcb8}
+.puzzle-slot.has img{opacity:1;filter:none}
+.puzzle-slot.has small{color:#9a6c16}
+.link-button{padding:0;color:#4963ab;background:none;font-size:.8rem;font-weight:700;text-decoration:underline}
+.bet-option.locked{opacity:.45;cursor:not-allowed;position:relative}
+.bet-option.locked:hover{transform:none}
+.bet-chance{display:block;margin-top:6px;color:#8b95a8;font-size:.56rem;font-style:normal;font-weight:700;line-height:1.3}
+.bet-locked{display:block;margin-top:6px;color:#c0495a;font-size:.58rem;font-style:normal;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.modal-backdrop{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:22px;background:#141c2e99;backdrop-filter:blur(3px)}
+.modal-card{width:min(560px,100%);max-height:84vh;overflow-y:auto;background:#fff;border-radius:20px;padding:26px 28px;box-shadow:0 28px 60px #10182740}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+.modal-head h2{margin:6px 0 0;font-size:1.4rem}
+.modal-close{width:34px;height:34px;border-radius:50%;background:#f1f4fa;color:#68748b;font-size:1.2rem;line-height:1}
+.modal-body article{padding:12px 0;border-top:1px solid #edf0f5}
+.modal-body h3{margin:0 0 5px;font-size:.92rem;color:#22304d}
+.modal-body p{margin:0;color:#68748b;font-size:.84rem;line-height:1.5}
+.auto-return{display:block;margin-top:14px;color:#9ba4b5;font-size:.72rem}
+.result-potential{margin:16px 0 0;padding:11px 14px;background:#f6f8fc;border:1px solid #e6ebf4;border-radius:12px;color:#5d6a84;font-size:.84rem}
+.result-potential.missed{background:#fff8ec;border-color:#f0dcb8;color:#8a6520}
+.secured-note{color:#227a58;font-size:.84rem}
+.secured-note b{color:#1c6949}
+.missed-note{display:block;margin-top:10px;color:#a9762a;font-size:.76rem;font-weight:700}
+.booster-marker{position:absolute;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:.68rem;font-weight:800;z-index:2}
+.booster-marker.waiting{background:#fdf0d6;color:#9a6c16;box-shadow:0 0 0 3px #fdf0d680;animation:pulse 1.6s ease-in-out infinite}
+.booster-marker.active{background:#f3c85f;color:#4a3405;box-shadow:0 0 0 5px #f3c85f55}
+.booster-marker.lost{background:#eceff5;color:#a3acbd}
+.booster-flash{position:absolute;top:14px;left:50%;transform:translateX(-50%);padding:5px 13px;border-radius:999px;background:#1b2440cc;color:#f3c85f;font-size:.72rem;font-weight:800;letter-spacing:.08em;white-space:nowrap;animation:pulse 1.6s ease-in-out infinite}
+.flight-multiplier.tier-warm{color:#f0d38a}
+.flight-multiplier.tier-mid{color:#f3c85f;text-shadow:0 0 18px #f3c85f66}
+.flight-multiplier.tier-high{color:#ffd45e;text-shadow:0 0 26px #ffd45e88;font-size:4.4rem}
+.flight-status.secured{color:#2f9a72}
+.flight-status.secured i{background:#2fbd83}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.crash-history{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #e8edf6;border-radius:14px;padding:10px 14px;margin-bottom:4px;box-shadow:0 6px 18px #23304b12}
+.crash-history-title{flex:0 0 auto;color:#8b95a8;font-size:.6rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.crash-history-strip{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.crash-chip{flex:0 0 auto;min-width:50px;text-align:center;padding:5px 9px;border-radius:9px;background:#f1f4fa;color:#5d6a84;font-size:.78rem;font-weight:800}
+.crash-chip.low{background:#fdeef0;color:#c0495a}
+.crash-chip.high{background:#fdf0d6;color:#9a6c16}
+.crash-chip.top{background:#e8f7f0;color:#1f7d5b}
+.flight-card .crash-history{margin-bottom:14px}
+@media(max-width:760px){.crash-history{flex-direction:column;align-items:flex-start;gap:8px}}
 .config-editor h3.config-group{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:26px 0 0;padding-top:18px;border-top:1px solid #edf0f5;font-size:.86rem;color:#2a3550}
 .config-editor h3.config-group:first-of-type{border-top:0;padding-top:0}
 .config-version{margin-left:auto;color:#8b95a8;font-size:.68rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}

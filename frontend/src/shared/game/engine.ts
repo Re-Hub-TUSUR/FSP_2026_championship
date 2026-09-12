@@ -31,6 +31,34 @@ export function buildLadder(config: EngineConfig): number[] {
   return ladder;
 }
 
+/**
+ * Ожидаемая прибавка коэффициента от бустера, одинаковая для всех тиров:
+ * (множитель − 1) × шанс появления = BOOSTER_BUDGET. Зеркало Models.BOOSTER_BUDGET.
+ */
+export const BOOSTER_BUDGET = 0.5;
+
+/** Шанс, что бустер вообще появится в раунде: сильный бустер выпадает реже. */
+export const boosterAppearChance = (booster: number) => (booster <= 1 ? 0 : Math.min(1, BOOSTER_BUDGET / (booster - 1)));
+
+/**
+ * Лестница для ставки с бустером: ожидаемый вклад бустера заранее вычитается из базовых
+ * коэффициентов, поэтому возврат игроку одинаков для всех вариантов ставки.
+ * Зеркало Config.ladderForBooster на бэкенде.
+ */
+export function ladderForBooster(config: EngineConfig, booster: number): number[] {
+  const base = buildLadder(config);
+  if (booster <= 1) return base;
+  const share = 1 / config.levels;
+  const priced = [1];
+  let reached = 0;
+  for (let level = 1; level <= config.levels; level++) {
+    reached += share;
+    const value = Math.round((base[level] / (1 + BOOSTER_BUDGET * reached)) * 100) / 100;
+    priced.push(Math.max(priced[level - 1] + 0.01, value));
+  }
+  return priced;
+}
+
 /** Первый уровень, на котором шар лопается; levels + 1 — шар долетел до вершины. */
 export function rollPopLevel(config: EngineConfig): number {
   for (let level = 1; level <= config.levels; level++) {

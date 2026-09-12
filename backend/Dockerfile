@@ -1,7 +1,9 @@
 FROM gradle:8.10-jdk21 AS build
 WORKDIR /workspace
 COPY . .
-RUN gradle --no-daemon bootJar \
+# Кэш Gradle переживает пересборки: зависимости скачиваются один раз, а не при каждом изменении исходников.
+RUN --mount=type=cache,target=/home/gradle/.gradle,sharing=locked \
+    GRADLE_USER_HOME=/home/gradle/.gradle gradle --no-daemon bootJar \
     && JAR=$(find /workspace/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | head -n 1) \
     && test -n "$JAR" \
     && cp "$JAR" /workspace/app.jar

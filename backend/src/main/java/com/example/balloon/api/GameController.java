@@ -49,8 +49,11 @@ public class GameController {
         Map.of("heading", "Темы и уровни", "text", "Красная тема содержит " + red.levels() + " уровней, зелёная — " + green.levels() + ". Каждый уровень поднимает коэффициент."),
         Map.of("heading", "Рост коэффициентов", "text", "Коэффициент растёт экспоненциально: чем выше шар, тем больше давление и тем дороже следующий уровень."),
         Map.of("heading", "Взрыв шара", "text", "На каждом уровне шар проходит проверку на разрыв. Шанс взрыва растёт с высотой, поэтому долгий полёт всегда рискован."),
-        Map.of("heading", "Cashout", "text", "Заберите выигрыш после первого уровня. Если шар долетел до последнего уровня, выплата начисляется автоматически."),
-        Map.of("heading", "Бустеры", "text", "Бустер ставки умножает бонусные очки на своём уровне и не влияет на коэффициент выплаты.")));
+        Map.of("heading", "Cashout", "text", "Заберите выигрыш после первого уровня — коэффициент фиксируется сразу. Шар продолжает лететь до взрыва, и только потом открывается экран результата. Если шар долетел до последнего уровня, выплата начисляется автоматически."),
+        Map.of("heading", "Бустеры", "text", "Бустер ставки ждёт на случайном уровне. Если шар долетит до него раньше, чем вы заберёте выигрыш, коэффициент умножается на значение бустера и начисляются дополнительные очки. После нажатия «Забрать» бустер не срабатывает."),
+        Map.of("heading", "Цена бустера", "text", "Базовые коэффициенты тира с бустером ниже ровно настолько, насколько в среднем добавляет сам бустер, поэтому возврат игроку одинаков для всех вариантов ставки."),
+        Map.of("heading", "Награда за раунд", "text", "За каждый завершённый раунд — и выигранный, и проигранный — вы получаете случайный недостающий фрагмент пазла. Собрав все "
+            + AccountService.PUZZLE_FRAGMENTS + " фрагментов, вы получаете " + AccountService.PUZZLE_BONUS + " бонусных баллов, коллекция обнуляется и начинается следующий пазл. Прогресс виден в профиле.")));
   }
 
   @PostMapping("/rounds")
@@ -71,6 +74,20 @@ public class GameController {
   @GetMapping("/rounds/history")
   public List<Map<String, Object>> history(@RequestParam(defaultValue = "50") int limit) {
     return game.history().stream().limit(Math.max(1, Math.min(100, limit))).map(this::toMap).toList();
+  }
+
+  /** Компактная лента «Прошлые игры»: коэффициенты взрыва завершённых раундов всех игроков. */
+  @GetMapping("/rounds/crashes")
+  public List<Map<String, Object>> crashes(@RequestParam(defaultValue = "20") int limit) {
+    return game.history().stream()
+        .limit(Math.max(1, Math.min(50, limit)))
+        .map(round -> Map.<String, Object>of(
+            "roundId", round.id,
+            "theme", round.theme(),
+            "crashMultiplier", round.crashMultiplier(),
+            "survived", round.popLevel > round.levels(),
+            "endedAt", round.endedAt == null ? round.startedAt : round.endedAt))
+        .toList();
   }
 
   @GetMapping("/rounds/{id}")
@@ -181,10 +198,15 @@ public class GameController {
 
   private Map<String, Object> configMap(Config config) {
     List<Map<String, Object>> options = new ArrayList<>();
-    for (int i = 0; i < config.bets().length; i++)
+    for (int i = 0; i < config.bets().length; i++) {
+      double[] tierLadder = config.ladderForBooster(config.boosters()[i]);
       options.add(Map.of("id", config.theme().name().toLowerCase() + "-x" + (i + 1),
           "amount", config.bets()[i],
-          "boosterMultiplier", config.boosters()[i]));
+          "boosterMultiplier", config.boosters()[i],
+          // Чем сильнее бустер, тем реже он выпадает — возврат игроку одинаков для всех тиров.
+          "boosterChance", round(config.boosterAppearChance(config.boosters()[i]), 3),
+          "ladder", Arrays.stream(Arrays.copyOfRange(tierLadder, 1, tierLadder.length)).boxed().toList()));
+    }
 
     double[] ladder = config.ladder();
     double[] boosterChances = config.boosterProbabilities();
@@ -236,6 +258,8 @@ public class GameController {
     map.put("boosterMultiplier", round.boosterMultiplier);
     map.put("boosterLevel", round.boosterLevel);
     map.put("boosterActivated", round.boosterActivated);
+    map.put("cashedOut", round.cashedOut());
+    map.put("flightOver", round.flightOver);
     map.put("levels", round.levels());
     map.put("level", round.level);
     map.put("multiplier", round.multiplier);
@@ -253,7 +277,10 @@ public class GameController {
     if (round.endedAt != null) map.put("endedAt", round.endedAt);
     if (round.finished()) {
       map.put("popLevel", round.popLevel);
+      map.put("crashMultiplier", round.crashMultiplier());
+      map.put("potentialMax", round.potentialMax());
       map.put("seed", round.seed);
+      if (round.reward != null) map.put("reward", round.reward);
     }
     return map;
   }

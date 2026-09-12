@@ -1,5 +1,6 @@
 package com.example.balloon.auth;
 
+import com.example.balloon.domain.Models.PuzzleAward;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -12,6 +13,10 @@ import javax.crypto.spec.PBEKeySpec;
 
 @Service
 public class AccountService implements CommandLineRunner {
+    /** Сколько фрагментов в одном пазле и какой бонус даёт собранный набор. */
+    public static final int PUZZLE_FRAGMENTS = 6;
+    public static final long PUZZLE_BONUS = 250;
+
     private final AccountRepository accounts; private final AuditRepository audits;
     private final Map<String,String> sessions = new ConcurrentHashMap<>();
     private final SecureRandom random = new SecureRandom();
@@ -53,6 +58,30 @@ public class AccountService implements CommandLineRunner {
     }
     @Transactional public AccountEntity addPoints(String username,long amount){
         AccountEntity a=byUsername(username); a.setPoints(Math.max(0,Math.addExact(a.getPoints(),amount))); return accounts.save(a);
+    }
+
+    /**
+     * Награда за раунд: случайный недостающий фрагмент пазла. Когда собраны все фрагменты,
+     * игрок получает бонус к балансу, коллекция обнуляется и начинается следующий пазл.
+     */
+    @Transactional public PuzzleAward awardPuzzleFragment(String username){
+        AccountEntity a=byUsername(username);
+        List<Integer> missing=new ArrayList<>();
+        for(int i=0;i<PUZZLE_FRAGMENTS;i++) if((a.getPuzzleMask()&(1<<i))==0) missing.add(i);
+        int fragment=missing.get(random.nextInt(missing.size()));
+        int mask=a.getPuzzleMask()|(1<<fragment);
+        int collected=Integer.bitCount(mask);
+        boolean completed=collected==PUZZLE_FRAGMENTS;
+        long bonus=0;
+        if(completed){
+            bonus=PUZZLE_BONUS;
+            a.setBalance(Math.addExact(a.getBalance(),bonus));
+            a.setPuzzlesCompleted(a.getPuzzlesCompleted()+1);
+            mask=0;
+        }
+        a.setPuzzleMask(mask);
+        accounts.save(a);
+        return new PuzzleAward(fragment,collected,PUZZLE_FRAGMENTS,completed,bonus);
     }
     public AccountEntity byId(String id){return accounts.findById(id).orElseThrow(()->new NoSuchElementException("User not found"));}
     @Transactional public AccountEntity setBlocked(String id,boolean blocked,String actor,String reason){AccountEntity a=byId(id);a.setBlocked(blocked);accounts.save(a);audit(actor,blocked?"USER_BLOCK":"USER_UNBLOCK",a.getUsername()+": "+reason);return a;}

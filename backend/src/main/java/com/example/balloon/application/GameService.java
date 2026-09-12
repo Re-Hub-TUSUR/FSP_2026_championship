@@ -82,9 +82,9 @@ public class GameService implements CommandLineRunner {
     String id = UUID.randomUUID().toString();
     String seed = randomSeed();
     String commitment = sha256(seed + ":" + id + ":" + config.version());
-    Round round = new Round(id, user, config, bet,
-        config.boosters()[Math.min(index, config.boosters().length - 1)],
-        seed, commitment, popLevel(seed, id, config), pickBoosterLevel(config), config.ladder());
+    double booster = config.boosters()[Math.min(index, config.boosters().length - 1)];
+    Round round = new Round(id, user, config, bet, booster,
+        seed, commitment, popLevel(seed, id, config), pickBoosterLevel(config, booster), config.ladderForBooster(booster));
     round.balanceAfter = balanceAfterBet;
 
     remember(round);
@@ -109,11 +109,15 @@ public class GameService implements CommandLineRunner {
     return round;
   }
 
+  /**
+   * Фиксирует выигрыш, но не останавливает полёт: по п. 1.3 шар продолжает лететь
+   * до точки взрыва, и только тогда игроку открывается экран результата.
+   */
   public Round cashout(String id) {
     Round round = get(id);
     synchronized (round) {
-      if (round.state == RoundState.CASHED_OUT) return round;
-      if (round.state != RoundState.STARTED) throw new IllegalStateException("Раунд уже завершён");
+      if (round.cashedOut()) return round;
+      if (round.flightOver) throw new IllegalStateException("Раунд уже завершён");
       if (round.level < 1) throw new IllegalStateException("Забрать выигрыш можно после первого уровня");
       payout(round, RoundState.CASHED_OUT);
       return round;
@@ -239,8 +243,12 @@ public class GameService implements CommandLineRunner {
     return value == null || value.isBlank() ? fallback : value.trim();
   }
 
-  /** Уровень бустера по заданным администратором вероятностям (line_N_loot_prob). */
-  private int pickBoosterLevel(Config config) {
+  /**
+   * Уровень бустера по заданным администратором вероятностям (line_N_loot_prob).
+   * Ноль означает, что в этом раунде бустер не выпал: сильный бустер появляется реже.
+   */
+  private int pickBoosterLevel(Config config, double booster) {
+    if (random.nextDouble() >= config.boosterAppearChance(booster)) return 0;
     double[] probabilities = config.boosterProbabilities();
     double roll = random.nextDouble();
     double accumulated = 0;
@@ -269,19 +277,32 @@ public class GameService implements CommandLineRunner {
 
   private void tick(Round round) {
     synchronized (round) {
-      if (round.state != RoundState.STARTED) { stopTicker(round.id); return; }
+      if (round.flightOver) { stopTicker(round.id); return; }
       int next = round.level + 1;
-      if (next >= round.popLevel) { finish(round, RoundState.CRASHED); return; }
+
+      if (next >= round.popLevel) {
+        // Шар лопнул. Если выигрыш уже забрали, он остаётся за игроком.
+        if (round.cashedOut()) endFlight(round);
+        else finish(round, RoundState.CRASHED);
+        return;
+      }
 
       round.level = next;
-      round.multiplier = round.ladder[next];
-      round.points += round.config.pointsPerLevel();
-      if (next == round.boosterLevel && !round.boosterActivated) {
-        round.boosterActivated = true;
-        round.points += (int) Math.round(round.config.pointsBoosterBonus() * round.boosterMultiplier);
+      // После cashout бустер не активируется и очки не начисляются — полёт идёт только для наглядности.
+      if (!round.cashedOut()) {
+        if (next == round.boosterLevel && !round.boosterActivated) {
+          round.boosterActivated = true;
+          round.points += (int) Math.round(round.config.pointsBoosterBonus() * round.boosterMultiplier);
+        }
+        round.points += round.config.pointsPerLevel();
       }
-      // Шар долетел до вершины — выигрыш начисляется автоматически.
-      if (next >= round.levels()) payout(round, RoundState.SETTLED);
+      round.multiplier = round.multiplierAt(next);
+
+      // Шар долетел до вершины.
+      if (next >= round.levels()) {
+        if (round.cashedOut()) endFlight(round);
+        else payout(round, RoundState.SETTLED);
+      }
     }
   }
 
@@ -291,18 +312,32 @@ public class GameService implements CommandLineRunner {
     round.points += round.config.pointsCashoutBonus();
     try { accounts.credit(round.userId, round.payout); accounts.addPoints(round.userId, round.points); }
     catch (NoSuchElementException e) { credit(round.payout); }
-    finish(round, state);
+    round.state = state;
+    round.balanceAfter = playerBalance(round);
+    // Cashout только фиксирует выплату: полёт останавливается отдельно, когда шар лопнет.
+    if (state != RoundState.CASHED_OUT) endFlight(round);
   }
 
   private void finish(Round round, RoundState state) {
     round.state = state;
-    round.endedAt = Instant.now();
     if (state == RoundState.CRASHED) {
-      try { accounts.addPoints(round.userId, round.points); } catch (Exception ignored) { /* demo fallback */ }
+      try { accounts.addPoints(round.userId, round.points); } catch (Exception ignored) { /* демо-режим без аккаунтов */ }
     }
-    try { round.balanceAfter = accounts.byUsername(round.userId).getBalance(); }
-    catch (Exception ignored) { round.balanceAfter = balance(); }
+    endFlight(round);
+  }
+
+  private void endFlight(Round round) {
+    round.flightOver = true;
+    round.endedAt = Instant.now();
+    // Награда выдаётся по итогам раунда независимо от выигрыша или проигрыша.
+    try { round.reward = accounts.awardPuzzleFragment(round.userId); } catch (Exception ignored) { /* демо-режим без аккаунтов */ }
+    round.balanceAfter = playerBalance(round);
     stopTicker(round.id);
+  }
+
+  private long playerBalance(Round round) {
+    try { return accounts.byUsername(round.userId).getBalance(); }
+    catch (Exception ignored) { return balance(); }
   }
 
   private void stopTicker(String id) {

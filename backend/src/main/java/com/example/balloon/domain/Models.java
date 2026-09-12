@@ -30,7 +30,7 @@ public final class Models {
                        int levels, long[] bets, double[] boosters, double[] boosterWeights,
                        int pointsPerLevel, int pointsCashoutBonus, int pointsBoosterBonus,
                        double baseHazard, double hazardGrowth, double maxHazard, double rtp,
-                       double[] ladderOverride, long version) {
+                       double[] ladderOverride, long minWinAmount, int popupTimeout, long version) {
 
     public static Config defaults(Theme theme) {
       int levels = theme == Theme.RED ? 12 : 9;
@@ -38,7 +38,7 @@ public final class Models {
           levels, new long[]{10, 20, 50, 100}, new double[]{1, 2, 3, 4}, uniformWeights(levels),
           10, 20, 15,
           theme == Theme.RED ? 0.12 : 0.155, theme == Theme.RED ? 1.115 : 1.12, 0.60, 0.96,
-          new double[0], 1);
+          new double[0], 50, 10, 1);
     }
 
     public static double[] uniformWeights(int levels) {
@@ -148,6 +148,8 @@ public final class Models {
     /** Полёт окончен: шар лопнул или долетел до вершины. Выигрыш мог быть зафиксирован раньше. */
     public volatile boolean flightOver = false;
     public volatile PuzzleAward reward;
+    /** Порядковый номер выигрыша игрока; 0 — раунд проигран. */
+    public volatile int winNumber = 0;
 
     public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
                  String seed, String commitment, int popLevel, int boosterLevel, double[] ladder) {

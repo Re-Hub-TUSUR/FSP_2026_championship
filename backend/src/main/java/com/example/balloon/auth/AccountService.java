@@ -83,6 +83,20 @@ public class AccountService implements CommandLineRunner {
         accounts.save(a);
         return new PuzzleAward(fragment,collected,PUZZLE_FRAGMENTS,completed,bonus);
     }
+    /** Отмечает выигранный раунд и возвращает порядковый номер выигрыша игрока. */
+    @Transactional public int registerWin(String username){
+        AccountEntity a=byUsername(username);
+        a.setWins(a.getWins()+1);
+        return accounts.save(a).getWins();
+    }
+
+    /** Покупка лотерейных билетов: списание бонусов и начисление билетов одной транзакцией. */
+    @Transactional public AccountEntity buyTickets(String username,int tickets,long price){
+        if(tickets<1) throw new IllegalArgumentException("Нужен хотя бы один билет");
+        AccountEntity a=debit(username,price);
+        a.setLotteryTickets(a.getLotteryTickets()+tickets);
+        return accounts.save(a);
+    }
     public AccountEntity byId(String id){return accounts.findById(id).orElseThrow(()->new NoSuchElementException("User not found"));}
     @Transactional public AccountEntity setBlocked(String id,boolean blocked,String actor,String reason){AccountEntity a=byId(id);a.setBlocked(blocked);accounts.save(a);audit(actor,blocked?"USER_BLOCK":"USER_UNBLOCK",a.getUsername()+": "+reason);return a;}
     @Transactional public AccountEntity setRole(String id,String role,String actor,String reason){if(!Set.of("USER","ADMIN").contains(role))throw new IllegalArgumentException("Role must be USER or ADMIN");AccountEntity a=byId(id);a.setRole(role);accounts.save(a);audit(actor,"ROLE_CHANGE",a.getUsername()+" -> "+role+": "+reason);return a;}

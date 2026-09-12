@@ -6,6 +6,7 @@ import com.example.balloon.auth.AccountService;
 import com.example.balloon.config.GameConfigEntity;
 import com.example.balloon.config.GameConfigRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Service;
 
@@ -58,8 +59,12 @@ public class GameService implements CommandLineRunner {
   public void run(String... args) {
     for (GameConfigEntity entity : configRepository.findAll()) {
       try {
-        Config stored = mapper.readValue(entity.getPayload(), Config.class);
-        if (stored.theme() != null) configs.put(stored.theme(), stored);
+        Theme theme = Theme.valueOf(entity.getTheme());
+        // Сохранённые настройки накладываются поверх значений по умолчанию: поля,
+        // появившиеся после публикации конфига, берутся из defaults, а не обнуляются.
+        ObjectNode merged = mapper.valueToTree(Config.defaults(theme));
+        merged.setAll((ObjectNode) mapper.readTree(entity.getPayload()));
+        configs.put(theme, mapper.treeToValue(merged, Config.class));
       } catch (Exception ignored) {
         // Повреждённая запись не должна ронять старт — тема останется на значениях по умолчанию.
       }
@@ -150,7 +155,7 @@ public class GameService implements CommandLineRunner {
         defaults.levels(), defaults.bets(), defaults.boosters(), defaults.boosterWeights(),
         defaults.pointsPerLevel(), defaults.pointsCashoutBonus(), defaults.pointsBoosterBonus(),
         defaults.baseHazard(), defaults.hazardGrowth(), defaults.maxHazard(), defaults.rtp(),
-        new double[0], config(theme).version() + 1);
+        new double[0], defaults.minWinAmount(), defaults.popupTimeout(), config(theme).version() + 1);
     persist(restored, actor);
     configs.put(theme, restored);
     return restored;
@@ -203,10 +208,15 @@ public class GameService implements CommandLineRunner {
 
     double[] ladder = normalizeLadder(request.ladderOverride(), levels);
 
+    if (request.minWinAmount() < 0) throw new IllegalArgumentException("Минимальный выигрыш для апсейла не может быть отрицательным");
+    if (request.popupTimeout() < 3 || request.popupTimeout() > 60)
+      throw new IllegalArgumentException("Таймаут всплывающего окна должен быть от 3 до 60 секунд");
+
     return new Config(theme, gameId, gameName, gameType, request.active(),
         levels, bets, boosters, weights,
         request.pointsPerLevel(), request.pointsCashoutBonus(), request.pointsBoosterBonus(),
-        baseHazard, hazardGrowth, maxHazard, rtp, ladder, current.version() + 1);
+        baseHazard, hazardGrowth, maxHazard, rtp, ladder,
+        request.minWinAmount(), request.popupTimeout(), current.version() + 1);
   }
 
   /** Ручная лестница: пустая — считаем по формуле, иначе значения должны строго расти. */
@@ -331,6 +341,9 @@ public class GameService implements CommandLineRunner {
     round.endedAt = Instant.now();
     // Награда выдаётся по итогам раунда независимо от выигрыша или проигрыша.
     try { round.reward = accounts.awardPuzzleFragment(round.userId); } catch (Exception ignored) { /* демо-режим без аккаунтов */ }
+    if (round.payout > 0) {
+      try { round.winNumber = accounts.registerWin(round.userId); } catch (Exception ignored) { /* демо-режим без аккаунтов */ }
+    }
     round.balanceAfter = playerBalance(round);
     stopTicker(round.id);
   }

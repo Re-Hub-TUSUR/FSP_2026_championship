@@ -11,6 +11,7 @@ import { Rules } from '../features/history/Rules';
 import { Admin } from '../features/admin/Admin';
 import { Auth } from '../features/auth/Auth';
 import { Leaderboard } from '../features/leaderboard/Leaderboard';
+import { Lottery } from '../features/lottery/Lottery';
 import { Profile } from '../features/profile/Profile';
 
 function Header() {
@@ -38,6 +39,7 @@ function Header() {
             <nav className="main-nav">
               <NavLink to="/play" className={location.pathname.startsWith('/round') || location.pathname === '/play' ? 'active' : ''}><span>🎈</span> Игра</NavLink>
               <NavLink to="/leaderboard" className={location.pathname === '/leaderboard' ? 'active' : ''}><span>♛</span> Рейтинг</NavLink>
+              <NavLink to="/lottery" className={location.pathname === '/lottery' ? 'active' : ''}><span>🎟</span> Лотерея</NavLink>
               <NavLink to="/history" className={location.pathname === '/history' ? 'active' : ''}><span>◷</span> История</NavLink>
               <NavLink to="/rules" className={location.pathname === '/rules' ? 'active' : ''}><span>?</span> Правила</NavLink>
               {data?.role === 'ADMIN' && <NavLink to="/admin" className={location.pathname === '/admin' ? 'active' : ''}><span>⚙</span> Админ</NavLink>}
@@ -48,6 +50,7 @@ function Header() {
                 <span className="account-name">{data?.username || 'Загрузка…'}</span>
               </NavLink>
               <div className="balance-pill"><span className="coin">★</span><span><small>ВАШ БАЛАНС</small><b>{data?.balance ?? '—'}</b></span></div>
+              <NavLink to="/lottery" className="ticket-pill" title="Лотерейные билеты"><span>🎟</span><b>{data?.lotteryTickets ?? 0}</b></NavLink>
               <button type="button" className="logout-button" onClick={logout}>Выйти</button>
             </div>
           </>
@@ -75,4 +78,4 @@ function RequireAdmin({ children }: { children: ReactNode }) {
   return data?.role === 'ADMIN' ? children : <Navigate to="/play" replace />;
 }
 
-export default function App() { return <div className="app"><Header /><main className="page"><Routes><Route path="/" element={<Navigate to="/register" replace />} /><Route path="/login" element={<GuestOnly><Auth mode="login" /></GuestOnly>} /><Route path="/register" element={<GuestOnly><Auth mode="register" /></GuestOnly>} /><Route path="/play" element={<RequireAuth><Play /></RequireAuth>} /><Route path="/round/:id" element={<RequireAuth><RoundView /></RequireAuth>} /><Route path="/round/:id/result" element={<RequireAuth><Result /></RequireAuth>} /><Route path="/leaderboard" element={<RequireAuth><Leaderboard /></RequireAuth>} /><Route path="/history" element={<RequireAuth><History /></RequireAuth>} /><Route path="/rules" element={<RequireAuth><Rules /></RequireAuth>} /><Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} /><Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} /><Route path="*" element={<Navigate to="/register" replace />} /></Routes></main><footer>100ЛОТО · Игра с виртуальными очками <span>•</span> Версия 1.0</footer></div> }
+export default function App() { return <div className="app"><Header /><main className="page"><Routes><Route path="/" element={<Navigate to="/register" replace />} /><Route path="/login" element={<GuestOnly><Auth mode="login" /></GuestOnly>} /><Route path="/register" element={<GuestOnly><Auth mode="register" /></GuestOnly>} /><Route path="/play" element={<RequireAuth><Play /></RequireAuth>} /><Route path="/round/:id" element={<RequireAuth><RoundView /></RequireAuth>} /><Route path="/round/:id/result" element={<RequireAuth><Result /></RequireAuth>} /><Route path="/leaderboard" element={<RequireAuth><Leaderboard /></RequireAuth>} /><Route path="/lottery" element={<RequireAuth><Lottery /></RequireAuth>} /><Route path="/history" element={<RequireAuth><History /></RequireAuth>} /><Route path="/rules" element={<RequireAuth><Rules /></RequireAuth>} /><Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} /><Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} /><Route path="*" element={<Navigate to="/register" replace />} /></Routes></main><footer>100ЛОТО · Игра с виртуальными очками <span>•</span> Версия 1.0</footer></div> }

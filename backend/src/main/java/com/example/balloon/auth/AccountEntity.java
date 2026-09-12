@@ -21,6 +21,10 @@ public class AccountEntity {
      */
     @Column(nullable=false, columnDefinition="integer default 0 not null") private int puzzleMask;
     @Column(nullable=false, columnDefinition="integer default 0 not null") private int puzzlesCompleted;
+    /** Купленные лотерейные билеты — имитация апсейла «Закрепи успех». */
+    @Column(nullable=false, columnDefinition="integer default 0 not null") private int lotteryTickets;
+    /** Сколько раундов игрок закончил с выигрышем: по этому счётчику показывается предложение «Закрепи успех». */
+    @Column(nullable=false, columnDefinition="integer default 0 not null") private int wins;
     @Column(nullable=false) private Instant createdAt;
     @Column(nullable=false) private Instant updatedAt;
 
@@ -34,6 +38,8 @@ public class AccountEntity {
     public long getPoints(){return points;} public int getLevel(){return level;} public Instant getCreatedAt(){return createdAt;} public Instant getUpdatedAt(){return updatedAt;}
     public int getPuzzleMask(){return puzzleMask;} public int getPuzzlesCompleted(){return puzzlesCompleted;}
     public void setPuzzleMask(int value){puzzleMask=value; touch();} public void setPuzzlesCompleted(int value){puzzlesCompleted=value; touch();}
+    public int getLotteryTickets(){return lotteryTickets;} public void setLotteryTickets(int value){lotteryTickets=value; touch();}
+    public int getWins(){return wins;} public void setWins(int value){wins=value; touch();}
     public void setRole(String role){this.role=role; touch();} public void setBlocked(boolean blocked){this.blocked=blocked; touch();}
     public void setPasswordHash(String value){passwordHash=value; touch();} public void setBalance(long value){balance=value; touch();}
     public void setPoints(long value){points=value; this.level=Math.max(1,(int)(points/100)+1); touch();}

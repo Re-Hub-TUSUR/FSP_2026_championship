@@ -175,6 +175,16 @@ export function ConfigEditor() {
       <label>Бонус за бустер<input type="number" min={0} value={draft.pointsBoosterBonus ?? 0} onChange={(e) => patch({ pointsBoosterBonus: +e.target.value })} /></label>
     </div>
 
+    <h3 className="config-group">Апсейл «Закрепи успех»</h3>
+    <div className="admin-fields">
+      <label>Минимальный выигрыш для предложения <small>MIN_WIN_AMOUNT</small>
+        <input type="number" min={0} value={draft.minWinAmount ?? 50} onChange={(e) => patch({ minWinAmount: +e.target.value })} />
+      </label>
+      <label>Автозакрытие окна, сек <small>POPUP_TIMEOUT, 3…60</small>
+        <input type="number" min={3} max={60} value={draft.popupTimeout ?? 10} onChange={(e) => patch({ popupTimeout: +e.target.value })} />
+      </label>
+    </div>
+
     <h3 className="config-group">
       Уровни: коэффициенты и положение бустера
       <label className="config-switch inline">

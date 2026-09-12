@@ -16,6 +16,7 @@ public class AuthController {
   profile.put("level",a.getLevel()); profile.put("createdAt",a.getCreatedAt());
   profile.put("puzzleMask",a.getPuzzleMask()); profile.put("puzzleFragments",AccountService.PUZZLE_FRAGMENTS);
   profile.put("puzzleBonus",AccountService.PUZZLE_BONUS); profile.put("puzzlesCompleted",a.getPuzzlesCompleted());
+  profile.put("lotteryTickets",a.getLotteryTickets()); profile.put("wins",a.getWins());
   return profile;
  }
 }

@@ -1,8 +1,11 @@
 import { ENGINE_CONFIG, boosterAppearChance, buildLadder, hazardAt, ladderForBooster, rollPopLevel } from '../game/engine';
 
 export type Theme = 'RED' | 'GREEN';
-export interface Me { id?: string; username: string; balance: number; role: string; points?: number; level?: number; blocked?: boolean; puzzleMask?: number; puzzleFragments?: number; puzzleBonus?: number; puzzlesCompleted?: number }
+export interface Me { id?: string; username: string; balance: number; role: string; points?: number; level?: number; blocked?: boolean; puzzleMask?: number; puzzleFragments?: number; puzzleBonus?: number; puzzlesCompleted?: number; lotteryTickets?: number; wins?: number }
 export interface PuzzleAward { fragment: number; collected: number; total: number; completed: boolean; bonus: number }
+export interface TicketPack { id: string; tickets: number; price: number; label: string }
+export interface LotteryCatalog { tickets: number; balance: number; ticketPrice: number; packs: TicketPack[] }
+export interface LotteryOffer { eligible: boolean; reason?: string; tickets: number; price: number; fullPrice: number; payout: number; timeoutSeconds: number }
 export interface LeaderRow { id: string; username: string; balance: number; rank?: number; level: number; points: number; multiplier: number; trend: number; rounds?: number; cashouts?: number; updatedAt?: string }
 export interface AdminUser { id: string; username: string; role: string; blocked: boolean; balance: number; points: number; level: number; createdAt?: string }
 export interface BetOption { id: string; amount: number; boosterMultiplier: number; boosterChance?: number; ladder?: number[] }
@@ -14,7 +17,7 @@ export interface GameConfig {
   pointsPerLevel: number; pointsCashoutBonus?: number; pointsBoosterBonus?: number;
   baseHazard?: number; hazardGrowth?: number; maxHazard?: number; rtp?: number;
   boosterWeights?: number[]; ladder?: number[]; ladderOverride?: number[]; ladderSource?: 'formula' | 'custom';
-  levelTable?: LevelRow[]; maxMultiplier?: number; version?: number;
+  levelTable?: LevelRow[]; maxMultiplier?: number; minWinAmount?: number; popupTimeout?: number; version?: number;
 }
 export interface Round {
   roundId: string; state: string; theme: Theme; betAmount: number; boosterMultiplier: number;
@@ -166,11 +169,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init?.headers || {}) } });
   if (!response.ok) {
     const text = await response.text();
-    let message = `HTTP ${response.status}`;
+    // 502/503/504 приходят от nginx, пока backend ещё поднимается — показываем человеческий текст вместо кода.
+    let message = response.status >= 502 && response.status <= 504
+      ? 'Сервер ещё запускается, попробуйте через полминуты'
+      : `Ошибка сервера (${response.status})`;
     try {
       const body = JSON.parse(text);
       message = body.error || body.detail || message;
-    } catch { /* сервер ответил не JSON — оставляем код статуса */ }
+    } catch { /* сервер ответил не JSON — оставляем понятный текст */ }
     throw new ApiError(response.status, message);
   }
   return response.json();
@@ -279,6 +285,11 @@ export const api = {
     }
   },
   proof: async (id: string) => request<Record<string, unknown>>(`/rounds/${id}/proof`),
+  // Лотерея работает только с авторизованным сервером: демо-режима у покупок нет.
+  lottery: (): Promise<LotteryCatalog> => request<LotteryCatalog>('/lottery'),
+  buyTickets: (packId: string) => request<{ tickets: number; balance: number }>('/lottery/buy', { method: 'POST', body: JSON.stringify({ packId }) }),
+  lotteryOffer: (roundId: string): Promise<LotteryOffer> => request<LotteryOffer>(`/lottery/offer/${roundId}`),
+  acceptOffer: (roundId: string) => request<{ tickets: number; balance: number }>('/lottery/offer/accept', { method: 'POST', body: JSON.stringify({ roundId }) }),
   // У админских запросов нет демо-режима: ошибку сервера должен увидеть администратор, а не подмена локальными данными.
   adminConfig: (theme: Theme = 'RED'): Promise<GameConfig> => request<GameConfig>(`/admin/config?theme=${theme}`),
   resetConfig: (theme: Theme): Promise<GameConfig> => request<GameConfig>(`/admin/config/reset?theme=${theme}`, { method: 'POST' }),

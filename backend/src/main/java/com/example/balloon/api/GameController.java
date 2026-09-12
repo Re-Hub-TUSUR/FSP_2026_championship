@@ -2,6 +2,7 @@ package com.example.balloon.api;
 
 import com.example.balloon.application.GameService;
 import com.example.balloon.application.LeaderboardService;
+import com.example.balloon.application.LotteryService;
 import com.example.balloon.auth.AccountEntity;
 import com.example.balloon.auth.AccountService;
 import com.example.balloon.domain.Models.*;
@@ -53,7 +54,11 @@ public class GameController {
         Map.of("heading", "Бустеры", "text", "Бустер ставки ждёт на случайном уровне. Если шар долетит до него раньше, чем вы заберёте выигрыш, коэффициент умножается на значение бустера и начисляются дополнительные очки. После нажатия «Забрать» бустер не срабатывает."),
         Map.of("heading", "Цена бустера", "text", "Базовые коэффициенты тира с бустером ниже ровно настолько, насколько в среднем добавляет сам бустер, поэтому возврат игроку одинаков для всех вариантов ставки."),
         Map.of("heading", "Награда за раунд", "text", "За каждый завершённый раунд — и выигранный, и проигранный — вы получаете случайный недостающий фрагмент пазла. Собрав все "
-            + AccountService.PUZZLE_FRAGMENTS + " фрагментов, вы получаете " + AccountService.PUZZLE_BONUS + " бонусных баллов, коллекция обнуляется и начинается следующий пазл. Прогресс виден в профиле.")));
+            + AccountService.PUZZLE_FRAGMENTS + " фрагментов, вы получаете " + AccountService.PUZZLE_BONUS + " бонусных баллов, коллекция обнуляется и начинается следующий пазл. Прогресс виден в профиле."),
+        Map.of("heading", "Закрепи успех", "text", "После удачного раунда с выигрышем от " + red.minWinAmount()
+            + " ★ можно закрепить результат — купить лотерейные билеты за бонусные баллы со скидкой. Предложение приходит на каждый "
+            + LotteryService.OFFER_EVERY_WINS + "-й выигрыш и закрывается само через " + red.popupTimeout()
+            + " секунд. Билеты также продаются во вкладке «Лотерея».")));
   }
 
   @PostMapping("/rounds")
@@ -178,7 +183,10 @@ public class GameController {
         number(body, "hazardGrowth", old.hazardGrowth()).doubleValue(),
         number(body, "maxHazard", old.maxHazard()).doubleValue(),
         number(body, "rtp", old.rtp()).doubleValue(),
-        ladderOverride, old.version());
+        ladderOverride,
+        number(body, "minWinAmount", old.minWinAmount()).longValue(),
+        number(body, "popupTimeout", old.popupTimeout()).intValue(),
+        old.version());
   }
 
   private static Number number(Map<String, Object> body, String key, Number fallback) {
@@ -240,6 +248,8 @@ public class GameController {
     map.put("ladderSource", config.hasCustomLadder() ? "custom" : "formula");
     map.put("levelTable", levelTable);
     map.put("maxMultiplier", ladder[config.levels()]);
+    map.put("minWinAmount", config.minWinAmount());
+    map.put("popupTimeout", config.popupTimeout());
     map.put("version", config.version());
     return map;
   }

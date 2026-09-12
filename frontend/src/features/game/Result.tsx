@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../shared/api/client';
+import { api, type LotteryOffer } from '../../shared/api/client';
 import { PuzzleReward } from './PuzzleReward';
+import { UpsellDialog } from '../lottery/UpsellDialog';
+
+/** Частоту показа определяет сервер (каждый N-й выигрыш); клиент лишь не повторяет окно для того же раунда. */
+const upsellKey = (roundId: string) => `balloon-upsell-${roundId}`;
 
 /** Через столько секунд бездействия игрок возвращается к выбору ставки (п. 1.5 постановки). */
 const AUTO_RETURN_SECONDS = 10;
@@ -14,6 +18,7 @@ export function Result() {
   const { data: round } = useQuery({ queryKey: ['round', id], queryFn: () => api.round(id) });
   const [secondsLeft, setSecondsLeft] = useState(AUTO_RETURN_SECONDS);
   const [autoReturn, setAutoReturn] = useState(true);
+  const [upsell, setUpsell] = useState<LotteryOffer | null>(null);
 
   useEffect(() => {
     if (!round) return;
@@ -37,15 +42,30 @@ export function Result() {
     };
   }, []);
 
+  // Персональное предложение запрашивается только после выигрышного раунда и один раз за сессию.
   useEffect(() => {
-    if (!round || round.state === 'STARTED' || !autoReturn) return;
+    if (!round || round.state === 'STARTED' || !(round.payout && round.payout > 0)) return;
+    if (sessionStorage.getItem(upsellKey(id))) return;
+    let cancelled = false;
+    api.lotteryOffer(id)
+      .then((offer) => {
+        if (cancelled || !offer.eligible) return;
+        sessionStorage.setItem(upsellKey(id), '1');
+        setUpsell(offer);
+      })
+      .catch(() => { /* предложение необязательно: молча пропускаем */ });
+    return () => { cancelled = true; };
+  }, [round?.state, round?.payout, id]);
+
+  useEffect(() => {
+    if (!round || round.state === 'STARTED' || !autoReturn || upsell) return;
     if (secondsLeft <= 0) {
       nav('/play', { replace: true });
       return;
     }
     const timer = setTimeout(() => setSecondsLeft((value) => value - 1), 1000);
     return () => clearTimeout(timer);
-  }, [round?.state, autoReturn, secondsLeft, nav]);
+  }, [round?.state, autoReturn, secondsLeft, upsell, nav]);
 
   if (!round || round.state === 'STARTED') return <div className="card loading"><div className="spinner" />Завершаем раунд…</div>;
 
@@ -80,6 +100,7 @@ export function Result() {
     <p className="muted result-balance">Баланс после раунда: <b>{round.balanceAfter ?? round.balance ?? 0} ★</b></p>
     <Link className="primary cta" to="/play">Играть снова <span>→</span></Link>
     <Link className="text-link" to="/history">Посмотреть историю</Link>
-    {autoReturn && <small className="auto-return">Возврат к выбору ставки через {secondsLeft} сек</small>}
+    {autoReturn && !upsell && <small className="auto-return">Возврат к выбору ставки через {secondsLeft} сек</small>}
+    {upsell && <UpsellDialog offer={upsell} roundId={id} onClose={() => setUpsell(null)} />}
   </section>;
 }

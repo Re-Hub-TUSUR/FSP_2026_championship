@@ -2,6 +2,7 @@ package com.example.balloon.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.time.Instant;
+import java.util.Arrays;
 
 public final class Models {
   public static final double MAX_MULTIPLIER = 10_000;
@@ -9,16 +10,31 @@ public final class Models {
   public enum Theme { RED, GREEN }
   public enum RoundState { CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED }
 
+  /**
+   * Настройки игры, которыми управляет администратор без выпуска новой версии.
+   * Группы соответствуют п. 1.9 постановки задачи: базовые поля, параметры
+   * математической модели, положение бустера по уровням, множители бустеров и очки.
+   */
   @JsonIgnoreProperties(ignoreUnknown = true)
-  public record Config(Theme theme, int levels, long[] bets, double[] boosters,
+  public record Config(Theme theme, String gameId, String gameName, String gameType, boolean active,
+                       int levels, long[] bets, double[] boosters, double[] boosterWeights,
                        int pointsPerLevel, int pointsCashoutBonus, int pointsBoosterBonus,
                        double baseHazard, double hazardGrowth, double maxHazard, double rtp,
-                       long version) {
+                       double[] ladderOverride, long version) {
 
-    public static Config defaults(Theme t) {
-      return t == Theme.RED
-          ? new Config(t, 12, new long[]{10, 20, 50, 100}, new double[]{1, 2, 3, 4}, 10, 20, 15, 0.12, 1.115, 0.60, 0.96, 1)
-          : new Config(t, 9, new long[]{10, 20, 50, 100}, new double[]{1, 2, 3, 4}, 10, 20, 15, 0.155, 1.12, 0.60, 0.96, 1);
+    public static Config defaults(Theme theme) {
+      int levels = theme == Theme.RED ? 12 : 9;
+      return new Config(theme, "balloon", "Воздушный шар", "CRASH", true,
+          levels, new long[]{10, 20, 50, 100}, new double[]{1, 2, 3, 4}, uniformWeights(levels),
+          10, 20, 15,
+          theme == Theme.RED ? 0.12 : 0.155, theme == Theme.RED ? 1.115 : 1.12, 0.60, 0.96,
+          new double[0], 1);
+    }
+
+    public static double[] uniformWeights(int levels) {
+      double[] weights = new double[Math.max(1, levels)];
+      Arrays.fill(weights, 1.0 / weights.length);
+      return weights;
     }
 
     /** Шанс взрыва на уровне: давление в шаре растёт экспоненциально с каждым уровнем. */
@@ -26,12 +42,18 @@ public final class Models {
       return Math.min(maxHazard, baseHazard * Math.pow(hazardGrowth, level - 1));
     }
 
+    /** Шанс долететь до уровня включительно. */
+    public double survivalAt(int level) {
+      double survival = 1;
+      for (int i = 1; i <= level; i++) survival *= 1 - hazardAt(i);
+      return survival;
+    }
+
     /**
-     * Лестница коэффициентов: коэффициент уровня обратен шансу до него долететь,
-     * поэтому рост экспоненциальный и ускоряется вместе с риском. Множитель rtp
-     * задаёт возврат игроку и одинаков на любом уровне.
+     * Лестница по формуле: коэффициент уровня обратен шансу до него долететь,
+     * поэтому растёт экспоненциально, а возврат игроку одинаков на любом уровне.
      */
-    public double[] ladder() {
+    public double[] modelLadder() {
       double[] ladder = new double[levels + 1];
       ladder[0] = 1.0;
       double survival = 1.0;
@@ -42,6 +64,31 @@ public final class Models {
       }
       return ladder;
     }
+
+    public boolean hasCustomLadder() { return ladderOverride != null && ladderOverride.length == levels; }
+
+    /** Действующая лестница: значения, заданные администратором вручную, либо расчёт по формуле. */
+    public double[] ladder() {
+      if (!hasCustomLadder()) return modelLadder();
+      double[] ladder = new double[levels + 1];
+      ladder[0] = 1.0;
+      System.arraycopy(ladderOverride, 0, ladder, 1, levels);
+      return ladder;
+    }
+
+    /** Вероятность выпадения бустера на уровень (line_N_loot_prob), нормированная к единице. */
+    public double[] boosterProbabilities() {
+      if (boosterWeights == null || boosterWeights.length != levels) return uniformWeights(levels);
+      double sum = 0;
+      for (double weight : boosterWeights) sum += Math.max(0, weight);
+      if (sum <= 0) return uniformWeights(levels);
+      double[] probabilities = new double[levels];
+      for (int i = 0; i < levels; i++) probabilities[i] = Math.max(0, boosterWeights[i]) / sum;
+      return probabilities;
+    }
+
+    /** Ожидаемый возврат при выходе на уровне: шанс долететь × коэффициент уровня. */
+    public double expectedReturnAt(int level) { return survivalAt(level) * ladder()[level]; }
   }
 
   public static class Round {

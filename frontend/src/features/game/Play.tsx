@@ -12,6 +12,8 @@ export function Play() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const { data: config } = useQuery({ queryKey: ['config', theme], queryFn: () => api.config(theme) });
+  const { data: red } = useQuery({ queryKey: ['config', 'RED'], queryFn: () => api.config('RED') });
+  const { data: green } = useQuery({ queryKey: ['config', 'GREEN'], queryFn: () => api.config('GREEN') });
 
   const options = config?.betOptions || [];
   const selected = options.find((option) => option.id === bet);
@@ -61,10 +63,10 @@ export function Play() {
       </div>
       <div className="theme-grid">
         <button className={`theme-option red ${theme === 'RED' ? 'selected' : ''}`} onClick={() => { setTheme('RED'); setBet(''); }}>
-          <span className="theme-icon">♦</span><span><b>Красный шар</b><small>12 уровней · яркий полёт</small></span><i>✓</i>
+          <span className="theme-icon">♦</span><span><b>Красный шар</b><small>{red?.levels ?? '—'} уровней · до ×{(red?.maxMultiplier ?? 0).toFixed(2)}</small></span><i>✓</i>
         </button>
         <button className={`theme-option green ${theme === 'GREEN' ? 'selected' : ''}`} onClick={() => { setTheme('GREEN'); setBet(''); }}>
-          <span className="theme-icon">♣</span><span><b>Зелёный шар</b><small>9 уровней · быстрый взлёт</small></span><i>✓</i>
+          <span className="theme-icon">♣</span><span><b>Зелёный шар</b><small>{green?.levels ?? '—'} уровней · до ×{(green?.maxMultiplier ?? 0).toFixed(2)}</small></span><i>✓</i>
         </button>
       </div>
 

@@ -40,6 +40,7 @@ function Header() {
               <NavLink to="/leaderboard" className={location.pathname === '/leaderboard' ? 'active' : ''}><span>♛</span> Рейтинг</NavLink>
               <NavLink to="/history" className={location.pathname === '/history' ? 'active' : ''}><span>◷</span> История</NavLink>
               <NavLink to="/rules" className={location.pathname === '/rules' ? 'active' : ''}><span>?</span> Правила</NavLink>
+              {data?.role === 'ADMIN' && <NavLink to="/admin" className={location.pathname === '/admin' ? 'active' : ''}><span>⚙</span> Админ</NavLink>}
             </nav>
             <div className="header-account">
               <NavLink to={data?.role === 'ADMIN' ? '/admin' : '/profile'} className="account-link" title="Профиль">

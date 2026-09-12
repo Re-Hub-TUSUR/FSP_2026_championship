@@ -1,7 +1,12 @@
 package com.example.balloon.application;
 
 import com.example.balloon.domain.Models.*;
+import static com.example.balloon.domain.Models.MAX_MULTIPLIER;
 import com.example.balloon.auth.AccountService;
+import com.example.balloon.config.GameConfigEntity;
+import com.example.balloon.config.GameConfigRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
@@ -14,7 +19,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 @Service
-public class GameService {
+public class GameService implements CommandLineRunner {
   private static final long TICK_MS = 1000;
   private static final int HISTORY_LIMIT = 200;
   private static final long START_BALANCE = 1000;
@@ -29,12 +34,16 @@ public class GameService {
   private final ScheduledExecutorService scheduler;
   private final SecureRandom random = new SecureRandom();
   private final AccountService accounts;
+  private final GameConfigRepository configRepository;
+  private final ObjectMapper mapper;
 
   private final Object wallet = new Object();
   private long balance = START_BALANCE;
 
-  public GameService(AccountService accounts) {
+  public GameService(AccountService accounts, GameConfigRepository configRepository, ObjectMapper mapper) {
     this.accounts = accounts;
+    this.configRepository = configRepository;
+    this.mapper = mapper;
     configs.put(Theme.RED, Config.defaults(Theme.RED));
     configs.put(Theme.GREEN, Config.defaults(Theme.GREEN));
     scheduler = Executors.newScheduledThreadPool(4, r -> {
@@ -44,12 +53,26 @@ public class GameService {
     });
   }
 
+  /** Поднимает опубликованные администратором настройки: без этого правки терялись бы при перезапуске. */
+  @Override
+  public void run(String... args) {
+    for (GameConfigEntity entity : configRepository.findAll()) {
+      try {
+        Config stored = mapper.readValue(entity.getPayload(), Config.class);
+        if (stored.theme() != null) configs.put(stored.theme(), stored);
+      } catch (Exception ignored) {
+        // Повреждённая запись не должна ронять старт — тема останется на значениях по умолчанию.
+      }
+    }
+  }
+
   public Config config(Theme theme) { return configs.get(theme); }
 
   public long balance() { synchronized (wallet) { try { return accounts.byUsername("demo").getBalance(); } catch (Exception ignored) { return balance; } } }
 
   public Round start(String user, Theme theme, String betOption) {
     Config config = Optional.ofNullable(config(theme)).orElseThrow(() -> new IllegalArgumentException("Неизвестная тема"));
+    if (!config.active()) throw new IllegalStateException("Тема временно отключена администратором");
     int index = optionIndex(betOption, config.bets().length);
     long bet = config.bets()[index];
     long balanceAfterBet;
@@ -61,7 +84,7 @@ public class GameService {
     String commitment = sha256(seed + ":" + id + ":" + config.version());
     Round round = new Round(id, user, config, bet,
         config.boosters()[Math.min(index, config.boosters().length - 1)],
-        seed, commitment, popLevel(seed, id, config), 1 + random.nextInt(config.levels()), config.ladder());
+        seed, commitment, popLevel(seed, id, config), pickBoosterLevel(config), config.ladder());
     round.balanceAfter = balanceAfterBet;
 
     remember(round);
@@ -107,23 +130,125 @@ public class GameService {
   /** Live authoritative snapshot used by leaderboard polling. */
   public List<Round> allRounds() { return List.copyOf(rounds.values()); }
 
-  public Config updateConfig(Theme theme, Config request) {
-    Config current = config(theme);
+  /** Применяет настройки администратора: сначала проверка допустимости, затем запись в базу и в память. */
+  public Config updateConfig(Theme theme, Config request, String actor) {
     if (request == null) throw new IllegalArgumentException("Конфигурация обязательна");
-    int levels = request.levels() > 0 ? request.levels() : current.levels();
-    long[] bets = request.bets() == null || request.bets().length == 0 ? current.bets() : request.bets();
-    double[] boosters = request.boosters() == null || request.boosters().length == 0 ? current.boosters() : request.boosters();
-    if (levels < 1 || levels > 30 || bets.length != 4 || boosters.length != 4)
-      throw new IllegalArgumentException("Некорректные уровни, ставки или бустеры");
-    double baseHazard = clamp(request.baseHazard() > 0 ? request.baseHazard() : current.baseHazard(), 0.01, 0.5);
-    double hazardGrowth = clamp(request.hazardGrowth() > 0 ? request.hazardGrowth() : current.hazardGrowth(), 1.0, 2.0);
-    double maxHazard = clamp(request.maxHazard() > 0 ? request.maxHazard() : current.maxHazard(), baseHazard, 0.95);
-    double rtp = clamp(request.rtp() > 0 ? request.rtp() : current.rtp(), 0.5, 1.0);
-    Config updated = new Config(theme, levels, bets, boosters,
-        Math.max(0, request.pointsPerLevel()), Math.max(0, request.pointsCashoutBonus()), Math.max(0, request.pointsBoosterBonus()),
-        baseHazard, hazardGrowth, maxHazard, rtp, current.version() + 1);
+    Config updated = validate(theme, request, config(theme));
+    persist(updated, actor);
     configs.put(theme, updated);
     return updated;
+  }
+
+  /** Возвращает тему к значениям по умолчанию. */
+  public Config resetConfig(Theme theme, String actor) {
+    Config defaults = Config.defaults(theme);
+    Config restored = new Config(theme, defaults.gameId(), defaults.gameName(), defaults.gameType(), defaults.active(),
+        defaults.levels(), defaults.bets(), defaults.boosters(), defaults.boosterWeights(),
+        defaults.pointsPerLevel(), defaults.pointsCashoutBonus(), defaults.pointsBoosterBonus(),
+        defaults.baseHazard(), defaults.hazardGrowth(), defaults.maxHazard(), defaults.rtp(),
+        new double[0], config(theme).version() + 1);
+    persist(restored, actor);
+    configs.put(theme, restored);
+    return restored;
+  }
+
+  private Config validate(Theme theme, Config request, Config current) {
+    String gameId = blankOr(request.gameId(), current.gameId());
+    String gameName = blankOr(request.gameName(), current.gameName());
+    String gameType = blankOr(request.gameType(), current.gameType());
+
+    int levels = request.levels();
+    if (levels < 3 || levels > 30) throw new IllegalArgumentException("Количество уровней должно быть от 3 до 30");
+
+    long[] bets = request.bets();
+    if (bets == null || bets.length != 4) throw new IllegalArgumentException("Нужно ровно 4 варианта ставки");
+    for (long bet : bets) if (bet < 1) throw new IllegalArgumentException("Ставка должна быть больше нуля");
+
+    double[] boosters = request.boosters();
+    if (boosters == null || boosters.length != 4) throw new IllegalArgumentException("Нужно ровно 4 множителя бустера");
+    for (double booster : boosters)
+      if (booster < 1 || booster > 100) throw new IllegalArgumentException("Множитель бустера должен быть от 1 до 100");
+
+    if (request.pointsPerLevel() < 0 || request.pointsCashoutBonus() < 0 || request.pointsBoosterBonus() < 0)
+      throw new IllegalArgumentException("Начисление очков не может быть отрицательным");
+
+    double baseHazard = request.baseHazard();
+    if (baseHazard < 0.001 || baseHazard > 0.5)
+      throw new IllegalArgumentException("Базовый шанс взрыва должен быть от 0.001 до 0.5");
+    double hazardGrowth = request.hazardGrowth();
+    if (hazardGrowth < 1 || hazardGrowth > 2)
+      throw new IllegalArgumentException("Темп роста шанса взрыва должен быть от 1.0 до 2.0");
+    double maxHazard = request.maxHazard();
+    if (maxHazard < baseHazard || maxHazard > 0.95)
+      throw new IllegalArgumentException("Потолок шанса взрыва должен быть между базовым шансом и 0.95");
+    double rtp = request.rtp();
+    if (rtp < 0.5 || rtp > 1)
+      throw new IllegalArgumentException("Возврат игроку (RTP) должен быть от 0.5 до 1.0");
+
+    double[] weights = request.boosterWeights();
+    if (weights == null || weights.length != levels) {
+      weights = Config.uniformWeights(levels);
+    } else {
+      double sum = 0;
+      for (double weight : weights) {
+        if (weight < 0) throw new IllegalArgumentException("Вероятность бустера не может быть отрицательной");
+        sum += weight;
+      }
+      if (sum <= 0) throw new IllegalArgumentException("Хотя бы у одного уровня вероятность бустера должна быть больше нуля");
+    }
+
+    double[] ladder = normalizeLadder(request.ladderOverride(), levels);
+
+    return new Config(theme, gameId, gameName, gameType, request.active(),
+        levels, bets, boosters, weights,
+        request.pointsPerLevel(), request.pointsCashoutBonus(), request.pointsBoosterBonus(),
+        baseHazard, hazardGrowth, maxHazard, rtp, ladder, current.version() + 1);
+  }
+
+  /** Ручная лестница: пустая — считаем по формуле, иначе значения должны строго расти. */
+  private double[] normalizeLadder(double[] requested, int levels) {
+    if (requested == null || requested.length == 0) return new double[0];
+    if (requested.length != levels)
+      throw new IllegalArgumentException("Коэффициентов должно быть ровно " + levels + " — по одному на уровень");
+    double[] ladder = new double[levels];
+    double previous = 1.0;
+    for (int i = 0; i < levels; i++) {
+      double value = Math.round(requested[i] * 100.0) / 100.0;
+      if (value <= previous)
+        throw new IllegalArgumentException("Коэффициент уровня " + (i + 1) + " должен быть больше предыдущего (" + previous + ")");
+      if (value > MAX_MULTIPLIER)
+        throw new IllegalArgumentException("Коэффициент не может превышать " + (long) MAX_MULTIPLIER);
+      ladder[i] = value;
+      previous = value;
+    }
+    return ladder;
+  }
+
+  private void persist(Config config, String actor) {
+    try {
+      String payload = mapper.writeValueAsString(config);
+      GameConfigEntity entity = configRepository.findById(config.theme().name()).orElse(null);
+      if (entity == null) configRepository.save(new GameConfigEntity(config.theme().name(), payload, actor));
+      else { entity.update(payload, actor); configRepository.save(entity); }
+    } catch (Exception e) {
+      throw new IllegalStateException("Не удалось сохранить конфигурацию: " + e.getMessage());
+    }
+  }
+
+  private static String blankOr(String value, String fallback) {
+    return value == null || value.isBlank() ? fallback : value.trim();
+  }
+
+  /** Уровень бустера по заданным администратором вероятностям (line_N_loot_prob). */
+  private int pickBoosterLevel(Config config) {
+    double[] probabilities = config.boosterProbabilities();
+    double roll = random.nextDouble();
+    double accumulated = 0;
+    for (int level = 1; level <= config.levels(); level++) {
+      accumulated += probabilities[level - 1];
+      if (roll < accumulated) return level;
+    }
+    return config.levels();
   }
 
   public Map<String, Object> proof(String id) {
@@ -223,8 +348,6 @@ public class GameService {
       return Math.min(1, count - 1);
     }
   }
-
-  private static double clamp(double value, double min, double max) { return Math.max(min, Math.min(max, value)); }
 
   private static double hmacUnit(String seed, String message) {
     try {

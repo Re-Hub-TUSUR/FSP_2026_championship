@@ -5,11 +5,14 @@ export interface Me { id?: string; username: string; balance: number; role: stri
 export interface LeaderRow { id: string; username: string; balance: number; rank?: number; level: number; points: number; multiplier: number; trend: number; rounds?: number; cashouts?: number; updatedAt?: string }
 export interface AdminUser { id: string; username: string; role: string; blocked: boolean; balance: number; points: number; level: number; createdAt?: string }
 export interface BetOption { id: string; amount: number; boosterMultiplier: number }
-export interface LevelRow { level: number; multiplier: number; popChance: number }
+export interface LevelRow { level: number; multiplier: number; popChance: number; boosterChance?: number; expectedReturn?: number }
 export interface GameConfig {
-  gameId: string; gameName?: string; theme: Theme; levels: number; betOptions: BetOption[];
+  gameId: string; gameName?: string; gameType?: string; active?: boolean;
+  theme: Theme; levels: number; betOptions: BetOption[];
   pointsPerLevel: number; pointsCashoutBonus?: number; pointsBoosterBonus?: number;
-  ladder?: number[]; levelTable?: LevelRow[]; maxMultiplier?: number; rtp?: number; version?: number;
+  baseHazard?: number; hazardGrowth?: number; maxHazard?: number; rtp?: number;
+  boosterWeights?: number[]; ladder?: number[]; ladderOverride?: number[]; ladderSource?: 'formula' | 'custom';
+  levelTable?: LevelRow[]; maxMultiplier?: number; version?: number;
 }
 export interface Round {
   roundId: string; state: string; theme: Theme; betAmount: number; boosterMultiplier: number;
@@ -206,11 +209,9 @@ export const api = {
     }
   },
   proof: async (id: string) => request<Record<string, unknown>>(`/rounds/${id}/proof`),
-  adminConfig: async (theme: Theme = 'RED'): Promise<GameConfig> => {
-    try { return await request<GameConfig>(`/admin/config?theme=${theme}`); } catch { return demoConfig(theme); }
-  },
-  updateConfig: async (config: GameConfig): Promise<GameConfig> => {
-    try { return await request<GameConfig>(`/admin/config?theme=${config.theme}`, { method: 'PUT', body: JSON.stringify(config) }); }
-    catch { return { ...config, version: (config.version || 1) + 1 }; }
-  }
+  // У админских запросов нет демо-режима: ошибку сервера должен увидеть администратор, а не подмена локальными данными.
+  adminConfig: (theme: Theme = 'RED'): Promise<GameConfig> => request<GameConfig>(`/admin/config?theme=${theme}`),
+  resetConfig: (theme: Theme): Promise<GameConfig> => request<GameConfig>(`/admin/config/reset?theme=${theme}`, { method: 'POST' }),
+  updateConfig: (config: GameConfig): Promise<GameConfig> =>
+    request<GameConfig>(`/admin/config?theme=${config.theme}`, { method: 'PUT', body: JSON.stringify(config) })
 };

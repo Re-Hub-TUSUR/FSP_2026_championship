@@ -503,3 +503,35 @@ p { margin-block: .7rem; }
   .landing-content { padding-inline: 18px; }
   .internal-footer { margin-left: -14px; margin-right: -14px; }
 }
+
+/* Player profile: pilot identity, competitive stats, and a visual daily puzzle. */
+.profile-page { display: grid; gap: 20px; }
+.profile-hero-card { display:flex; align-items:center; gap:20px; padding:28px 32px; border-radius:22px; color:#fff; background:linear-gradient(120deg,#182844,#2f5d88); box-shadow:0 16px 34px #203d6226; }
+.profile-avatar-large { width:72px; height:72px; border-radius:20px; font-size:1.8rem; flex:0 0 auto; }
+.profile-identity { flex:1; min-width:0; }
+.profile-identity h1 { margin:5px 0 2px; font-family:Oswald,sans-serif; font-size:2rem; }
+.profile-identity p { margin:0 0 16px; color:#d5e7f7; font-size:.8rem; }
+.profile-identity p span { color:#ffd76a; padding:0 5px; }
+.profile-level-row { display:flex; justify-content:space-between; gap:14px; color:#b9d0e7; font-size:.68rem; font-weight:700; }
+.profile-level-row b { color:#ffda73; }
+.profile-level-track { height:8px; overflow:hidden; margin-top:7px; border-radius:99px; background:#dfe8f333; }
+.profile-level-track > span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#f6bf3f,#ffe28b); transition:width .4s ease; }
+.profile-status { margin-left:auto; align-self:flex-start; color:#a8f2c8; white-space:nowrap; }
+.profile-status i { background:#4bd18c; }
+.profile-stats-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+.profile-stat-card { position:relative; min-height:150px; padding:20px; border:1px solid #e2e9f2; border-radius:18px; background:#fff; box-shadow:0 8px 20px #243b6810; }
+.profile-stat-icon { display:grid; place-items:center; width:34px; height:34px; margin-bottom:14px; border-radius:10px; background:#fff5d9; color:#c58c1c; font-size:1.2rem; }
+.profile-stat-card small { display:block; color:#8491a5; font-size:.62rem; font-weight:900; letter-spacing:.08em; }
+.profile-stat-card strong { display:block; margin:7px 0 4px; color:#223957; font-size:1.55rem; }
+.profile-stat-card > span:last-child { color:#8491a5; font-size:.68rem; }
+.profile-stat-card button { margin-top:7px; padding:7px 10px; border:1px solid #e8ce7e; border-radius:8px; color:#946b16; background:#fff9e9; font-size:.68rem; font-weight:800; }
+.points-stat .profile-stat-icon { background:#e9f0ff; color:#5374d2; }.record-stat .profile-stat-icon { background:#e7f8f0; color:#29986d; }.ticket-stat .profile-stat-icon { background:#fff0ea; color:#dc7257; }
+.profile-puzzle-card { padding:28px 32px 32px; border-radius:22px; background:#fff; box-shadow:0 10px 28px #243b6812; }
+.profile-puzzle-header { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }
+.profile-puzzle-header h2 { margin:5px 0 4px; color:#1d395e; font-size:1.5rem; }.profile-puzzle-header p { margin:0; color:#7d8da3; font-size:.78rem; }.profile-reset { padding:10px 12px; border-radius:10px; color:#667a93; background:#f3f7fb; font-size:.7rem; white-space:nowrap; }.profile-reset b { color:#bd8415; margin-left:4px; font-variant-numeric:tabular-nums; }
+.profile-puzzle-content { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr); gap:24px; margin-top:24px; align-items:stretch; }
+.profile-puzzle-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; min-height:260px; padding:10px; border-radius:16px; background:linear-gradient(145deg,#eaf4fb,#f8fbfe); }
+.profile-puzzle-slot { position:relative; display:grid; place-items:center; min-height:115px; overflow:hidden; border:1px dashed #b9c9d8; border-radius:12px; background:#f4f7fa; }.profile-puzzle-slot img { width:74px; height:74px; object-fit:contain; opacity:.16; filter:grayscale(1); }.profile-puzzle-slot.has { border:1px solid #e0b949; background:linear-gradient(145deg,#fff9df,#fff1b4); box-shadow:inset 0 0 0 2px #ffe28566; }.profile-puzzle-slot.has img { opacity:1; filter:drop-shadow(0 4px 8px #b47c1d33); }.profile-puzzle-slot span { color:#93a1b2; font-size:.62rem; font-weight:800; }.profile-puzzle-slot.has span { color:#a37619; }.profile-puzzle-slot small { position:absolute; top:7px; right:9px; color:#9ba8b7; font-size:.6rem; font-weight:900; }
+.profile-reward-card { display:flex; flex-direction:column; justify-content:center; padding:22px; border:1px solid #ebdfb6; border-radius:16px; background:linear-gradient(145deg,#fffaf0,#fff4d3); }.profile-reward-card .profile-stat-icon { margin-bottom:10px; }.profile-reward-card > small { color:#a3833d; font-size:.62rem; font-weight:900; letter-spacing:.08em; }.profile-reward-card h3 { margin:8px 0 4px; color:#654d17; font-size:1rem; }.profile-reward-card p { margin:0 0 20px; color:#927e4d; font-size:.7rem; }.profile-progress-label { display:flex; justify-content:space-between; color:#8b7750; font-size:.68rem; }.profile-progress-label b { color:#654d17; }.profile-reward-card .profile-level-track { background:#eadfbd; }.profile-puzzle-cta { display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding:12px 14px; border-radius:10px; color:#fff; background:#d29a24; text-decoration:none; font-size:.72rem; font-weight:900; }.profile-puzzle-cta:hover { background:#b98216; }.profile-reward-card.ready { border-color:#d7b13e; box-shadow:0 0 0 3px #f1ca5a33; }.profile-reward-card.ready .profile-puzzle-cta { background:#269a71; }
+@media(max-width:850px){.profile-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.profile-puzzle-content{grid-template-columns:1fr}.profile-puzzle-grid{min-height:0}.profile-reward-card{min-height:250px}}
+@media(max-width:560px){.profile-hero-card{align-items:flex-start;flex-wrap:wrap;padding:22px 18px}.profile-identity{min-width:calc(100% - 94px)}.profile-status{order:3;width:100%;margin-left:0}.profile-puzzle-card{padding:22px 16px 24px}.profile-puzzle-header{flex-direction:column}.profile-reset{align-self:stretch;text-align:center}.profile-puzzle-grid{gap:7px;padding:7px}.profile-puzzle-slot{min-height:95px}.profile-puzzle-slot img{width:56px;height:56px}}

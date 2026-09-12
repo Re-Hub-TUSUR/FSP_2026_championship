@@ -12,6 +12,7 @@ import { Admin } from '../features/admin/Admin';
 import { Leaderboard } from '../features/leaderboard/Leaderboard';
 import { Profile } from '../features/profile/Profile';
 import { DailyBonusPanel } from '../features/game/DailyBonusPanel';
+import { Landing } from '../features/landing/Landing';
 
 function Header() {
   const queryClient = useQueryClient();

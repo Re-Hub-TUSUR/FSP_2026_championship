@@ -331,6 +331,7 @@ export const api = {
   login: async (username: string, password: string) => { const result = await request<{token:string; user:Me}>('/auth/login', { method:'POST', body: JSON.stringify({username,password}) }); localStorage.setItem('balloon-token', result.token); window.dispatchEvent(new Event('balloon-auth-changed')); return result.user; },
   register: async (username: string, password: string) => { const result = await request<Me>('/auth/register', { method:'POST', body: JSON.stringify({username,password}) }); return api.login(username,password).then(() => result); },
   logout: async () => { try { await request('/auth/logout', { method:'POST' }); } finally { localStorage.removeItem('balloon-token'); window.dispatchEvent(new Event('balloon-auth-changed')); } },
+  topUp: async (): Promise<Me> => request<Me>('/auth/topup', { method: 'POST' }),
   me: async (): Promise<Me> => {
     try {
       const profile = await request<Me>('/me');
@@ -342,8 +343,9 @@ export const api = {
         window.dispatchEvent(new Event('balloon-auth-changed'));
         throw error;
       }
+      const localToken = localStorage.getItem('balloon-token');
       return {
-        username: 'Гость', balance: loadBalance(), role: 'PLAYER',
+        username: localToken === 'demo-admin' ? 'admin' : localToken === 'demo-demo' ? 'demo' : 'Гость', balance: localToken === 'demo-demo' ? 500 : loadBalance(), role: localToken === 'demo-admin' ? 'ADMIN' : 'PLAYER',
         puzzleMask: Number(localStorage.getItem(puzzleKey) || 0),
         puzzleFragments: PUZZLE_FRAGMENTS, puzzleBonus: 0, dailyBonus: demoDailyState()
       };

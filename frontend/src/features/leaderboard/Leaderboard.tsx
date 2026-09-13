@@ -43,13 +43,8 @@ export function Leaderboard() {
   const players = useMemo(() => {
     const merged = [...(q.data || [])]
       .filter((row, index, list) => list.findIndex((candidate) => candidate.id === row.id || candidate.username === row.username) === index);
-    // /leaderboard is authoritative; add the authenticated account only when a
-    // successful response omitted it (for example, due to server-side paging).
-    if (!q.isError && me.data && !merged.some((row) => row.id === me.data?.id || row.username === me.data?.username)) {
-      merged.push({ id: me.data.id || 'current-player', username: me.data.username, points: me.data.points || 0, level: me.data.level || 1, balance: me.data.balance, multiplier: 1, trend: 0, rounds: 0 });
-    }
     return merged.sort((left, right) => right.points - left.points || left.username.localeCompare(right.username, 'ru'));
-  }, [q.data, q.isError, me.data]);
+  }, [q.data]);
 
   const isMe = (row: LeaderRow) => row.id === me.data?.id || row.username === currentName;
   const rankOf = (row: LeaderRow) => players.indexOf(row) + 1;

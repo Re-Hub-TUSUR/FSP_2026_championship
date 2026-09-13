@@ -71,6 +71,38 @@ const PUZZLE_FRAGMENTS = 6;
 /** 0.001% в вероятностной записи (один шанс из ста тысяч). */
 export const DAILY_JACKPOT_CHANCE = 0.00001;
 
+/**
+ * Generates an idempotency key in browsers where `crypto.randomUUID` is not
+ * available (for example, an HTTP deployment or an older WebView).  The
+ * fallback still uses Web Crypto when available and keeps the UUID v4 shape
+ * expected by tooling and logs.
+ */
+const createIdempotencyKey = (): string => {
+  const webCrypto = globalThis.crypto;
+  if (typeof webCrypto?.randomUUID === 'function') {
+    try { return webCrypto.randomUUID(); } catch { /* fall through to getRandomValues */ }
+  }
+
+  const bytes = new Uint8Array(16);
+  try {
+    if (typeof webCrypto?.getRandomValues === 'function') {
+      webCrypto.getRandomValues(bytes);
+    } else {
+      throw new Error('Web Crypto is unavailable');
+    }
+  } catch {
+    // Idempotency keys are not secrets; preserve functionality in legacy
+    // browsers that expose neither randomUUID nor getRandomValues.
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  }
+
+  // RFC 4122 version 4 and variant bits.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
 type DemoRound = Round & { popLevel: number; ladder: number[]; boosterLevel: number; startedAtMs: number };
 
 const loadRounds = (): DemoRound[] => { try { return JSON.parse(localStorage.getItem(roundsKey) || '[]'); } catch { return []; } };
@@ -382,7 +414,7 @@ export const api = {
     }
   },
   claimDailyBonus: async (): Promise<DailyBonusState> => {
-    const idempotencyKey = crypto.randomUUID();
+    const idempotencyKey = createIdempotencyKey();
     const payload: RequestInit = {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
@@ -445,7 +477,7 @@ export const api = {
   },
   start: async (theme: Theme, betOptionId: string): Promise<Round> => {
     try {
-      return await request<Round>('/rounds', { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ theme, betOptionId }) });
+      return await request<Round>('/rounds', { method: 'POST', headers: { 'Idempotency-Key': createIdempotencyKey() }, body: JSON.stringify({ theme, betOptionId }) });
     } catch (error) {
       if (!isDemoMode()) throw error;
       const config = demoConfig(theme);

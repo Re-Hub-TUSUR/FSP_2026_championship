@@ -9,3 +9,4 @@ vite.config.d.ts
 .env
 .env.local
 .DS_Store
+.pnpm-store/

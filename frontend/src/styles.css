@@ -871,3 +871,164 @@ input:disabled { color: #a3acbd; background: #f4f6fa; }
 
 /* Final mobile override: keep the in-flight TOP-5 panel visible. */
 @media (max-width: 420px) { .flight-screen .top5-panel { display: block; } }
+
+/* ================= 21. МОБИЛЬНАЯ ВЕРСИЯ: только узкие экраны ================= */
+/* Все правила раздела лежат внутри медиазапросов, раскладка компьютера не меняется. */
+@media (max-width: 760px) {
+  /* Шапка: логотип и счёт одной строкой, навигация второй строкой с горизонтальной прокруткой */
+  .topbar-inner { gap: 6px 8px; padding: 6px 12px 0; }
+  .brand img { height: 34px; }
+  .header-account { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+  .balance-pill, .ticket-pill, .puzzle-chip { gap: 4px; padding: 5px 7px; border-radius: 12px; }
+  .balance-pill b { font-size: 15px; }
+  .puzzle-chip b { font-size: 13px; }
+  .app .topbar .balance-pill > img, .app .topbar .puzzle-chip > img, .app .topbar .ticket-pill > img { width: 18px; height: 18px; }
+  .topup-button { width: 30px; height: 30px; border-radius: 10px; font-size: 17px; }
+  .account-avatar { width: 28px; height: 28px; font-size: 12px; }
+  .logout-button { display: inline-flex; align-items: center; padding: 6px 7px; font-size: 11px; }
+  .main-nav { flex: 1 0 100%; min-height: 40px; gap: 0; overflow-x: auto; scrollbar-width: none; }
+  .main-nav::-webkit-scrollbar { display: none; }
+  .main-nav a { padding: 0 11px; font-size: 13px; }
+  .app:has(.design-play) .main-nav a.active { margin: 6px 2px; padding: 0 12px; }
+
+  /* Экран ставки */
+  .app:has(.design-play) { background-size: cover; background-attachment: scroll; }
+  .weekly-bonus { padding: 16px 12px 22px; }
+  .design-play > .weekly-bonus { margin-top: -16px; }
+  .weekly-bonus h2 { margin-bottom: 10px; font-size: 17px; }
+  .bonus-days { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .bonus-day { min-height: 0; padding: 8px 4px; border-radius: 16px; }
+  .bonus-day b { margin-bottom: 6px; font-size: 12px; }
+  .bonus-day span { min-height: 32px; border-radius: 12px; font-size: 16px; }
+  .design-play .bonus-day span img { width: 22px; height: 22px; }
+  .design-play .bonus-day .surprise-icon { width: 26px; height: 26px; }
+  .daily-reward-message { margin: 10px auto -8px; }
+  .design-play .setup-card { padding: 20px 12px 34px; }
+  .design-play .section-title h2 { font-size: 18px; }
+  .rules-link { font-size: 13px; }
+  .design-play .theme-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .design-play .theme-option { flex-direction: column; justify-content: flex-start; gap: 8px; min-height: 0; padding: 14px 10px 12px; border-radius: 18px; text-align: center; }
+  .design-play .theme-option img { height: 92px; }
+  .design-play .theme-option span { align-items: center; gap: 4px; }
+  .design-play .theme-option b { margin-bottom: 0; font-size: 16px; }
+  .design-play .theme-option small { font-size: 11.5px; line-height: 1.3; }
+  .design-play .bet-title { margin-top: 22px; }
+  .design-play .bet-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .design-play .bet-option { min-height: 0; padding: 12px 8px 10px; border-radius: 16px; }
+  .design-play .bet-option > img { height: 50px; }
+  .design-play .bet-option b { font-size: 22px; }
+  .design-play .bet-option b img { width: 28px !important; height: 28px !important; }
+  .bet-option strong { padding: 3px 8px; font-size: 11px; }
+  .design-start-row { gap: 10px; margin: 18px 0; }
+  .design-start-row > div { width: 100%; padding: 12px 14px; font-size: 13px; }
+  .design-start { width: 100%; min-width: 0; min-height: 52px; font-size: 18px; }
+  .design-play .ladder-step { min-width: 64px; padding: 8px 6px; }
+
+  /* Карточки тем на других страницах и вкладки */
+  .theme-grid { grid-template-columns: 1fr; }
+  .theme-option img { height: 60px; }
+  .tabs { flex-wrap: wrap; }
+  .config-actions > button { max-width: 100%; white-space: normal; }
+
+  /* Лендинг */
+  .landing .hero-card { min-height: 0; }
+  .landing .hero-copy { padding: 24px 18px; }
+  .landing .hero-copy h1 { font-size: 30px; }
+  .landing .hero-stats { gap: 18px; }
+  .landing .hero-copy .primary { width: 100%; font-size: 18px; }
+  .landing .hero-art { height: 180px; padding: 0; }
+  .landing .hero-art .landing-balloon-red { width: 150px; right: calc(50% - 20px); top: -4px; }
+  .landing .hero-art .landing-balloon-green { width: 100px; right: calc(50% - 125px); top: 18px; }
+  .landing .topbar .logout-button, .landing .topbar .primary { padding: 7px 14px; font-size: 14px; }
+  .landing-white-section .draw-banner { flex-direction: column; align-items: stretch; padding: 18px; }
+  .landing-white-section .draw-timer { flex-wrap: wrap; }
+  .landing-white-section .draw-timer .primary, .landing-white-section .draw-timer .ghost { flex: 1 1 auto; }
+
+  /* История */
+  .leader-toolbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 10px 12px; }
+  .leader-toolbar .tabs { flex-wrap: nowrap; }
+  .leader-toolbar .tabs button { flex: 1 1 0; min-height: 44px; padding: 4px 8px; white-space: normal; line-height: 1.2; }
+  .leader-toolbar .tabs button small { display: block; margin-left: 0; }
+  .history-filter select { min-width: 0; }
+  .history-summary { gap: 10px; }
+  .history-summary div { padding: 12px 14px; }
+  .history-summary b { font-size: 22px; }
+
+  /* Турнир */
+  .tournament-hero { padding: 20px 16px; }
+  .tournament-hero h1 { font-size: 26px; }
+  .tournament-clock { width: 100%; }
+  .tournament-countdown { width: 100%; gap: 6px; }
+  .tournament-countdown span { flex: 1 1 0; min-width: 0; padding: 8px 4px; }
+  .tournament-countdown b { font-size: 22px; }
+  .leader-personal, .leader-personal.has-cta { gap: 12px; padding: 14px; }
+  .leader-personal-main, .leader-personal .primary { grid-column: 1 / -1; }
+  .leader-table-top { flex-wrap: wrap; padding: 16px 14px 0; }
+  .leader-table.is-tournament .search { margin: 12px 14px; }
+
+  /* Лотерея */
+  .ticket-counter { align-self: flex-start; padding: 10px 16px; }
+  .draw-banner { flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .draw-banner > img { width: 52px; height: 52px; }
+  .draw-banner > div:not(.draw-timer) { flex: 1 1 200px; min-width: 0; }
+  .draw-banner h2 { font-size: 19px; }
+  .draw-timer { width: 100%; margin-left: 0; }
+  .draw-timer span { flex: 1 1 0; min-width: 0; }
+  .ticket-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .ticket-pack { min-width: 0; padding: 16px 10px 12px; }
+  .ticket-pack > img { width: 60px; height: 60px; }
+  .ticket-price { flex-wrap: wrap; justify-content: center; gap: 4px; font-size: 19px; }
+  .ticket-pack .primary { width: 100%; min-height: 40px; padding: 0 8px; font-size: 12.5px; white-space: normal; }
+
+  /* Профиль */
+  .profile-grid { gap: 10px; }
+  .profile-hero { flex-wrap: wrap; gap: 14px; padding: 18px 16px; }
+  .profile-avatar { width: 54px; height: 54px; border-radius: 16px; font-size: 22px; }
+  .profile-hero h1 { font-size: 26px; }
+  .stat-card { padding: 14px; }
+  .stat-card strong { font-size: 22px; }
+  .stat-card .ghost { width: 100%; white-space: normal; }
+
+  /* Результат раунда */
+  .result-card { padding: 22px 14px; border-radius: 18px; }
+  .result-card h1 { font-size: 28px; }
+  .result-numbers { grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; padding: 14px 0; }
+  .result-numbers b { font-size: 21px; }
+  .puzzle-reward { flex-wrap: wrap; }
+  .puzzle-progress { margin-left: 0; }
+  .result-balance { padding: 12px; }
+  .result-action-buttons { flex-direction: column; }
+  .result-action-buttons > * { width: 100%; }
+
+  /* Модальные окна */
+  .modal-backdrop { padding: 12px; }
+  .modal-card { max-height: calc(100dvh - 24px); border-radius: 18px; }
+  .modal-card .start-row { flex-direction: row; align-items: center; }
+  .tournament-dialog .start-row { flex-direction: column; align-items: stretch; }
+  .modal-scene { height: 170px; }
+  .modal-scene .asset-balloon { height: 120px; }
+  .modal-head h2 { font-size: 20px; }
+  .upsell-card { padding: 22px 16px 16px; }
+  .upsell-offer { flex-wrap: wrap; }
+  .tournament-list li { grid-template-columns: 32px minmax(0, 1fr) auto; padding: 9px 10px; }
+  .tournament-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@media (max-width: 560px) {
+  .app > .topbar .brand { display: none; }
+  .app > .topbar .header-account { justify-content: space-between; }
+}
+
+@media (max-width: 420px) {
+  h1 { font-size: 26px; }
+  .design-play .theme-option img { height: 78px; }
+  .admin-fields { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 360px) {
+  .app > .topbar .ticket-pill { display: none; }
+  .bonus-day b { font-size: 11px; }
+  .bonus-day span { font-size: 14px; }
+  .design-play .bet-option b { font-size: 20px; }
+  .ticket-grid { grid-template-columns: 1fr; }
+}

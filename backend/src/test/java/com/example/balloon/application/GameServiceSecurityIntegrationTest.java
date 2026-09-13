@@ -2,6 +2,7 @@ package com.example.balloon.application;
 
 import com.example.balloon.auth.AccountEntity;
 import com.example.balloon.auth.AccountService;
+import com.example.balloon.domain.Models.Config;
 import com.example.balloon.domain.Models.Round;
 import com.example.balloon.domain.Models.Theme;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.util.NoSuchElementException;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -17,6 +19,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -48,6 +51,35 @@ class GameServiceSecurityIntegrationTest {
   }
 
   @Test
+  void validatesAndPublishesPerLevelCrashProbabilities() {
+    Config before = game.config(Theme.RED);
+    double[] valid = new double[before.levels()];
+    valid[0] = 0;
+    Arrays.fill(valid, 1, valid.length, 0.25);
+
+    assertThrows(IllegalArgumentException.class,
+        () -> game.updateConfig(Theme.RED, withHazards(before, new double[before.levels() - 1]), "test"),
+        "таблица должна содержать значение для каждого уровня");
+
+    double[] firstLevelRisk = Arrays.copyOf(valid, valid.length);
+    firstLevelRisk[0] = 0.01;
+    assertThrows(IllegalArgumentException.class,
+        () -> game.updateConfig(Theme.RED, withHazards(before, firstLevelRisk), "test"),
+        "первый уровень обязан оставаться безопасным");
+
+    try {
+      Config updated = game.updateConfig(Theme.RED, withHazards(before, valid), "test");
+      assertTrue(updated.hasCustomHazards());
+      assertArrayEquals(valid, updated.hazardOverride());
+      assertEquals(0, updated.hazardAt(1), 1e-12);
+      assertEquals(0.25, updated.hazardAt(2), 1e-12);
+    } finally {
+      // Не оставлять изменённую конфигурацию другим тестам в этом общем Spring-контексте.
+      game.updateConfig(Theme.RED, before, "test-restore");
+    }
+  }
+
+  @Test
   void concurrentRetriesWithTheSameKeyCreateOnlyOneRoundAndOneDebit() throws Exception {
     AccountEntity player = player();
     CountDownLatch ready = new CountDownLatch(2);
@@ -72,6 +104,14 @@ class GameServiceSecurityIntegrationTest {
     ready.countDown();
     if (!go.await(5, TimeUnit.SECONDS)) throw new AssertionError("test start barrier timed out");
     return game.startIdempotent(username, Theme.RED, "red-x1", "parallel-retry-key");
+  }
+
+  private static Config withHazards(Config source, double[] hazards) {
+    return new Config(source.theme(), source.gameId(), source.gameName(), source.gameType(), source.active(),
+        source.levels(), source.bets(), source.boosters(), source.boosterWeights(),
+        source.pointsPerLevel(), source.pointsCashoutBonus(), source.pointsBoosterBonus(),
+        source.baseHazard(), source.hazardGrowth(), source.maxHazard(), hazards, source.rtp(),
+        source.ladderOverride(), source.minWinAmount(), source.popupTimeout(), source.version());
   }
 
   private AccountEntity player() {

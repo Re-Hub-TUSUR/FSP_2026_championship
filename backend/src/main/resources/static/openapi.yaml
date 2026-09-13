@@ -828,6 +828,11 @@ components:
         popLevel: { type: integer, nullable: true }
         boosterLevel: { type: integer, nullable: true }
         crashMultiplier: { type: number, format: double, nullable: true }
+        hazardSource: { type: string, enum: [formula, custom] }
+        hazardTable:
+          type: array
+          description: Эффективные шансы взрыва по уровням в снимке завершённого раунда.
+          items: { type: number, format: double, minimum: 0, maximum: 0.95 }
         ladder:
           type: array
           items: { type: number, format: double }
@@ -849,6 +854,11 @@ components:
         baseHazard: { type: number, format: double }
         hazardGrowth: { type: number, format: double }
         maxHazard: { type: number, format: double }
+        hazardOverride:
+          type: array
+          description: Пустой массив — формула; иначе ручные шансы взрыва по уровням, начиная с обязательного 0 на первом уровне.
+          items: { type: number, format: double, minimum: 0, maximum: 0.95 }
+        hazardSource: { type: string, enum: [formula, custom] }
         rtp: { type: number, format: double }
         boosterWeights:
           type: array
@@ -913,6 +923,10 @@ components:
         baseHazard: { type: number, format: double }
         hazardGrowth: { type: number, format: double }
         maxHazard: { type: number, format: double }
+        hazardOverride:
+          type: array
+          description: Пустой массив возвращает формулу; иначе нужно ровно по одному шансу на уровень и 0 на первом уровне.
+          items: { type: number, format: double, minimum: 0, maximum: 0.95 }
         rtp: { type: number, format: double }
         boosterWeights:
           type: array

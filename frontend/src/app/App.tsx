@@ -138,10 +138,24 @@ export default function App() {
     const music = new Audio('/assets/birds-background.mp3');
     music.loop = true;
     music.volume = 0.22;
-    const startMusic = () => { void music.play().catch(() => {}); };
+    // Browsers may reject autoplay until the first user gesture. Keep trying
+    // on all common gesture types so a direct visit to /profile can unlock
+    // the same global ambience as the other screens.
+    const unlockEvents: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'touchstart'];
+    const startMusic = () => {
+      void music.play().then(() => {
+        unlockEvents.forEach((event) => window.removeEventListener(event, startMusic));
+      }).catch(() => {
+        // Autoplay is still blocked; a later user gesture will retry.
+      });
+    };
     startMusic();
-    window.addEventListener('pointerdown', startMusic, { once: true });
-    return () => { window.removeEventListener('pointerdown', startMusic); music.pause(); music.src = ''; };
+    unlockEvents.forEach((event) => window.addEventListener(event, startMusic, { passive: true }));
+    return () => {
+      unlockEvents.forEach((event) => window.removeEventListener(event, startMusic));
+      music.pause();
+      music.src = '';
+    };
   }, []);
   const location = useLocation();
   const isLanding = location.pathname === '/';

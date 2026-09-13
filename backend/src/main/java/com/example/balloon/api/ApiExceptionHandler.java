@@ -1,10 +1,13 @@
 package com.example.balloon.api;
 
 import org.springframework.http.*;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -17,6 +20,28 @@ public class ApiExceptionHandler {
   @ExceptionHandler(IllegalArgumentException.class)
   ResponseEntity<Map<String, Object>> badRequest(Exception e) {
     return problem(HttpStatus.BAD_REQUEST, "Bad Request", e.getMessage());
+  }
+
+  /**
+   * Bean Validation failures happen before a controller method is entered.  Do
+   * not expose Spring's full exception message (which includes rejected input
+   * and Java implementation details); return the constraint messages intended
+   * for the user instead.
+   */
+  @ExceptionHandler(MethodArgumentNotValidException.class)
+  ResponseEntity<Map<String, Object>> validation(MethodArgumentNotValidException e) {
+    String detail = e.getBindingResult().getFieldErrors().stream()
+        .map(ApiExceptionHandler::validationMessage)
+        .filter(message -> !message.isBlank())
+        .distinct()
+        .collect(Collectors.joining("; "));
+    return problem(HttpStatus.BAD_REQUEST, "Bad Request",
+        detail.isBlank() ? "Проверьте введённые данные" : detail);
+  }
+
+  private static String validationMessage(FieldError error) {
+    String message = error.getDefaultMessage();
+    return message == null || message.isBlank() ? "Некорректное значение поля" : message;
   }
 
   @ExceptionHandler(Exception.class)

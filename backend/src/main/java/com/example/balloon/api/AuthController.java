@@ -30,8 +30,12 @@ public class AuthController {
     this.dailyBonus = dailyBonus;
   }
 
-  public record RegisterRequest(@NotBlank @Size(min = 3, max = 40) String username,
-                                @NotBlank @Size(min = 6, max = 128) String password) {}
+  public record RegisterRequest(
+      @NotBlank @Size(min = 3, max = 40)
+      String username,
+      @NotBlank(message = "Пароль обязателен")
+      @Size(min = 6, max = 128, message = AccountService.PASSWORD_REQUIREMENTS)
+      String password) {}
   public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
 
   @PostMapping("/register")

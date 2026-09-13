@@ -20,6 +20,8 @@ import javax.crypto.spec.PBEKeySpec;
 
 @Service
 public class AccountService implements CommandLineRunner {
+    /** Требования к паролю, общие для API-валидации и проверки в сервисе. */
+    public static final String PASSWORD_REQUIREMENTS = "Пароль должен содержать от 6 до 128 символов";
     /** Количество фрагментов дневного пазла. Награда определяется билетом, а не фиксированной суммой. */
     public static final int PUZZLE_FRAGMENTS = DailyBonusService.PUZZLE_FRAGMENTS;
     /**
@@ -215,7 +217,7 @@ public class AccountService implements CommandLineRunner {
     }
     private AccountEntity byUsernameForUpdate(String username){return accounts.findByUsernameIgnoreCaseForUpdate(clean(username)).orElseThrow(()->new NoSuchElementException("User not found"));}
     private AccountEntity byIdForUpdate(String id){return accounts.findByIdForUpdate(id).orElseThrow(()->new NoSuchElementException("User not found"));}
-    private static void validatePassword(String p){if(p==null||p.length()<6||p.length()>128)throw new IllegalArgumentException("Password must be 6-128 characters");}
+    private static void validatePassword(String p){if(p==null||p.length()<6||p.length()>128)throw new IllegalArgumentException(PASSWORD_REQUIREMENTS);}
     private byte[] randomBytes(int n){byte[] b=new byte[n];random.nextBytes(b);return b;}
     private String hash(String password){validatePassword(password);byte[] salt=randomBytes(16);byte[] out=derive(password,salt,120_000,32);return "pbkdf2$120000$"+b64(salt)+"$"+b64(out);}
     private boolean verify(String p,String encoded){try{String[] x=encoded.split("\\$");return MessageDigest.isEqual(derive(p,Base64.getUrlDecoder().decode(x[2]),Integer.parseInt(x[1]),32),Base64.getUrlDecoder().decode(x[3]));}catch(Exception e){return false;}}

@@ -9,6 +9,25 @@ const steps = [
   { n: '03', title: 'Заберите вовремя', text: 'Успейте зафиксировать выигрыш до взрыва' }
 ];
 
+const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MAX_LENGTH = 128;
+const PASSWORD_REQUIREMENTS = `Пароль должен содержать от ${PASSWORD_MIN_LENGTH} до ${PASSWORD_MAX_LENGTH} символов.`;
+
+/**
+ * Spring may return either the service's English message or a technical
+ * MethodArgumentNotValidException description.  Neither is useful to a
+ * player, so keep all password-length variants behind one stable UI message.
+ */
+const registrationErrorMessage = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : '';
+  const normalized = message.toLocaleLowerCase();
+  const mentionsPassword = /password|парол/.test(normalized);
+  const mentionsLength = /length|size|character|символ|длин|6\s*[-–—]\s*128/.test(normalized);
+  const mentionsValidation = /methodargumentnotvalid|validation failed|field error|registerrequest/.test(normalized);
+  if (mentionsPassword && (mentionsLength || mentionsValidation)) return PASSWORD_REQUIREMENTS;
+  return message || 'Не удалось зарегистрироваться';
+};
+
 export function Landing() {
   const nav = useNavigate();
   const queryClient = useQueryClient();
@@ -38,12 +57,23 @@ export function Landing() {
   };
 
   const submit = async (event: React.FormEvent) => {
-    event.preventDefault(); setBusy(true); setError('');
+    event.preventDefault(); setError('');
+    if (tab === 'register') {
+      // Registration uses manual validation so the message is rendered in the
+      // form instead of being hidden in the browser's native validation bubble.
+      if (!username.trim()) { setError('Введите никнейм игрока.'); return; }
+      if (!password) { setError('Введите пароль.'); return; }
+      if (password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
+        setError(PASSWORD_REQUIREMENTS);
+        return;
+      }
+    }
+    setBusy(true);
     try {
       await (tab === 'login' ? api.login(username, password) : api.register(username, password));
       nav('/play');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось войти');
+      setError(tab === 'register' ? registrationErrorMessage(err) : err instanceof Error ? err.message : 'Не удалось войти');
     } finally { setBusy(false); }
   };
 
@@ -178,18 +208,19 @@ export function Landing() {
           <button className={tab === 'register' ? 'active' : ''} onClick={() => setTab('register')}>Быстрая регистрация</button>
         </div>
 
-        <form onSubmit={submit} style={{ textAlign: 'left' }}>
+        <form onSubmit={submit} noValidate={tab === 'register'} style={{ textAlign: 'left' }}>
           <label className="field-label" htmlFor="landing-username">Никнейм игрока</label>
           <input id="landing-username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Ваш никнейм" required autoFocus />
           <label className="field-label" htmlFor="landing-password" style={{ marginTop: 12 }}>Пароль</label>
-          <input id="landing-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" required />
+          <input id="landing-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" required minLength={tab === 'register' ? PASSWORD_MIN_LENGTH : undefined} maxLength={tab === 'register' ? PASSWORD_MAX_LENGTH : undefined} aria-describedby={tab === 'register' ? 'landing-password-hint' : undefined} autoComplete={tab === 'register' ? 'new-password' : 'current-password'} />
+          {tab === 'register' && <small id="landing-password-hint" className="muted" style={{ display: 'block', marginTop: 6, fontSize: 11 }}>{PASSWORD_REQUIREMENTS}</small>}
 
           <div className="start-row" style={{ marginTop: 14, paddingTop: 0, border: 0 }}>
             <button type="button" className="text-button" onClick={() => fill('demo')}>Заполнить demo</button>
             <button type="button" className="text-button" onClick={() => fill('admin')}>Заполнить admin</button>
           </div>
 
-          {error && <div className="form-error">{error}</div>}
+          {error && <div className="form-error" role="alert">{error}</div>}
 
           <button className={`primary ${busy ? 'is-loading' : ''}`} disabled={busy} style={{ width: '100%', marginTop: 14 }}>
             {busy ? 'Подключаем…' : 'Полетели!'} <span aria-hidden="true">→</span>

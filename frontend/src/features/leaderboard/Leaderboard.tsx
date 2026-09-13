@@ -1,27 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { api, isDemoMode, type LeaderRow, type Tournament } from '../../shared/api/client';
+import { api, type LeaderRow, type Tournament } from '../../shared/api/client';
 
 const number = (value: number) => new Intl.NumberFormat('ru-RU').format(Math.round(value || 0)).replace(/ /g, ' ');
 const maskName = (name: string) => (name.length <= 3 ? '***' : `***${name.slice(3)}`);
 const pad = (value: number) => String(value).padStart(2, '0');
-
-const demoPlayers: LeaderRow[] = [
-  ['demo-airlex', 'airlex', 3420, 12], ['demo-victor', 'victor', 2100, 11], ['demo-skyplayer', 'skyplayer', 1850, 10],
-  ['demo-winner', 'abcwinner', 1420, 10], ['demo-captain', 'abccaptain', 1100, 9], ['demo-lucky', 'abclucky', 940, 8],
-  ['demo-ivan', 'abcivan', 850, 8], ['demo-alex', 'abcalex', 760, 7], ['demo-rain', 'abcpilot', 650, 7],
-  ['demo-nova', 'abcnova', 560, 6], ['demo-star', 'abcstar', 500, 6], ['demo-cloud', 'abccloud', 450, 5],
-  ['demo-wind', 'abcwind', 390, 5], ['demo-flame', 'abcflame', 340, 4], ['demo-orbit', 'abcorbit', 290, 4],
-  ['demo-wing', 'abcwing', 240, 3], ['demo-solo', 'abcsolo', 180, 2], ['demo-kite', 'abckite', 125, 2]
-].map(([id, username, points, level], index) => ({
-  id: String(id), username: String(username), points: Number(points), level: Number(level),
-  balance: 0, multiplier: 1 + (18 - index) * 0.03, trend: index % 4 === 0 ? 2 : index % 5 === 0 ? -1 : 0, rounds: 8 + index
-}));
-const fallbackPlayers: LeaderRow[] = [
-  { id: 'demo-admin', username: 'admin', points: 50, level: 1, balance: 0, multiplier: 1, trend: 0, rounds: 2 },
-  { id: 'demo-current', username: 'demo', points: 20, level: 1, balance: 0, multiplier: 1, trend: 0, rounds: 1 }
-];
 
 /** Призы топ-3 приходят с сервера турниров; без него — резервные значения. */
 const prizesOf = (tournament?: Tournament) =>
@@ -56,17 +40,16 @@ export function Leaderboard() {
   const prizes = prizesOf(tournament);
   const currentName = me.data?.username;
 
-  // Демонстрационный состав подмешивается только в демо-режиме или когда рейтинг недоступен:
-  // иначе выдуманные игроки занимали бы места и призы настоящего турнира.
-  const showDemo = isDemoMode() || q.isError;
   const players = useMemo(() => {
-    const merged = [...(q.data || []), ...(showDemo ? [...demoPlayers, ...fallbackPlayers] : [])]
+    const merged = [...(q.data || [])]
       .filter((row, index, list) => list.findIndex((candidate) => candidate.id === row.id || candidate.username === row.username) === index);
-    if (me.data && !merged.some((row) => row.id === me.data?.id || row.username === me.data?.username)) {
+    // /leaderboard is authoritative; add the authenticated account only when a
+    // successful response omitted it (for example, due to server-side paging).
+    if (!q.isError && me.data && !merged.some((row) => row.id === me.data?.id || row.username === me.data?.username)) {
       merged.push({ id: me.data.id || 'current-player', username: me.data.username, points: me.data.points || 0, level: me.data.level || 1, balance: me.data.balance, multiplier: 1, trend: 0, rounds: 0 });
     }
     return merged.sort((left, right) => right.points - left.points || left.username.localeCompare(right.username, 'ru'));
-  }, [q.data, me.data, showDemo]);
+  }, [q.data, q.isError, me.data]);
 
   const isMe = (row: LeaderRow) => row.id === me.data?.id || row.username === currentName;
   const rankOf = (row: LeaderRow) => players.indexOf(row) + 1;
@@ -144,7 +127,7 @@ export function Leaderboard() {
           <span aria-hidden="true">⌕</span>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Поиск по никнейму" aria-label="Поиск по никнейму" />
         </label>
-        {q.isError && <p className="tournament-note">Показываем демонстрационный состав: рейтинг временно недоступен.</p>}
+        {q.isError && <p className="tournament-note">Рейтинг временно недоступен. Повторите попытку позже.</p>}
         {tournamentQuery.isError && <p className="tournament-note">Срок и призы показаны по резервным настройкам: сервис турниров временно недоступен.</p>}
         <div className="leader-table-head"><span>#</span><span>Игрок</span><span>Уровень</span><span>Очки</span><span>Возможный приз</span></div>
         <div className="leader-table-scroll">

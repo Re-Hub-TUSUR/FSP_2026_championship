@@ -44,8 +44,23 @@ public final class Models {
   public record Config(Theme theme, String gameId, String gameName, String gameType, boolean active,
                        int levels, long[] bets, double[] boosters, double[] boosterWeights,
                        int pointsPerLevel, int pointsCashoutBonus, int pointsBoosterBonus,
-                       double baseHazard, double hazardGrowth, double maxHazard, double rtp,
+                       double baseHazard, double hazardGrowth, double maxHazard, double[] hazardOverride, double rtp,
                        double[] ladderOverride, long minWinAmount, int popupTimeout, long version) {
+
+    /**
+     * Source-compatible constructor for published configurations and tests written before per-level
+     * crash odds were introduced.  An empty override explicitly means that the formula is active.
+     */
+    public Config(Theme theme, String gameId, String gameName, String gameType, boolean active,
+                  int levels, long[] bets, double[] boosters, double[] boosterWeights,
+                  int pointsPerLevel, int pointsCashoutBonus, int pointsBoosterBonus,
+                  double baseHazard, double hazardGrowth, double maxHazard, double rtp,
+                  double[] ladderOverride, long minWinAmount, int popupTimeout, long version) {
+      this(theme, gameId, gameName, gameType, active, levels, bets, boosters, boosterWeights,
+          pointsPerLevel, pointsCashoutBonus, pointsBoosterBonus,
+          baseHazard, hazardGrowth, maxHazard, new double[0], rtp,
+          ladderOverride, minWinAmount, popupTimeout, version);
+    }
 
     /**
      * Порог выигрыша для «Закрепи успех» по умолчанию — минимальная ставка: предложение приходит
@@ -64,7 +79,7 @@ public final class Models {
       return new Config(theme, "balloon", "Воздушный шар", "CRASH", true,
           levels, new long[]{10, 20, 50, 100}, new double[]{1, 2, 3, 4}, defaultBoosterWeights(levels),
           10, 20, 15,
-          theme == Theme.RED ? 0.15 : 0.10, theme == Theme.RED ? 1.14 : 1.25, 0.60, 0.96,
+          theme == Theme.RED ? 0.15 : 0.10, theme == Theme.RED ? 1.14 : 1.25, 0.60, new double[0], 0.96,
           new double[0], DEFAULT_MIN_WIN_AMOUNT, 10, 1);
     }
 
@@ -95,8 +110,8 @@ public final class Models {
 
     /** Сохранённая тема использует нетронутые шансы одной из прошлых версий, а не настройки администратора. */
     public boolean usesLegacyDefaultMath() {
-      // Ручная лестница подобрана под старые шансы: их замена изменила бы возврат игроку.
-      if (hasCustomLadder()) return false;
+      // Ручная лестница или таблица шансов подобрана администратором: миграция не должна её менять.
+      if (hasCustomLadder() || hasCustomHazards()) return false;
       for (double[][] version : PREVIOUS_DEFAULT_MATH) {
         double[] legacy = version[theme == Theme.RED ? 0 : 1];
         if (Math.abs(baseHazard - legacy[0]) < 1e-9
@@ -126,14 +141,33 @@ public final class Models {
           math && untouchedWeights ? defaultBoosterWeights(levels) : boosterWeights,
           pointsPerLevel, pointsCashoutBonus, pointsBoosterBonus,
           math ? fresh.baseHazard() : baseHazard, math ? fresh.hazardGrowth() : hazardGrowth,
-          math ? fresh.maxHazard() : maxHazard, rtp,
+          math ? fresh.maxHazard() : maxHazard, hazardOverride, rtp,
           ladderOverride, usesLegacyMinWinAmount() ? fresh.minWinAmount() : minWinAmount, popupTimeout, version + 1);
     }
 
-    /** Шанс взрыва на уровне. Первый подъём без риска, дальше давление в шаре растёт экспоненциально. */
+    /**
+     * Шанс взрыва на уровне. Первый подъём всегда безопасен; после него применяется
+     * опубликованная администратором таблица, если она полная и валидна, иначе формула.
+     */
     public double hazardAt(int level) {
       if (level <= SAFE_LEVELS) return 0;
+      if (hasCustomHazards() && level <= levels) return hazardOverride[level - 1];
       return Math.min(maxHazard, baseHazard * Math.pow(hazardGrowth, level - 1));
+    }
+
+    /**
+     * Ручные шансы присутствуют только как полная таблица: по одному значению на уровень.
+     * Повторная проверка диапазона делает чтение старой или повреждённой JSON-записи безопасным:
+     * такая запись не подменит формульную вероятность до следующей публикации администратором.
+     */
+    public boolean hasCustomHazards() {
+      if (levels < 1 || hazardOverride == null || hazardOverride.length != levels) return false;
+      for (int level = 1; level <= levels; level++) {
+        double chance = hazardOverride[level - 1];
+        if (!Double.isFinite(chance) || chance < 0 || chance > 0.95) return false;
+        if (level <= SAFE_LEVELS && chance != 0) return false;
+      }
+      return true;
     }
 
     /** Шанс долететь до уровня включительно. */
@@ -144,8 +178,8 @@ public final class Models {
     }
 
     /**
-     * Лестница по формуле: коэффициент уровня обратен шансу до него долететь,
-     * поэтому растёт экспоненциально, а возврат игроку одинаков на любом уровне.
+     * Лестница по действующим шансам: коэффициент уровня обратен шансу до него долететь,
+     * поэтому растёт экспоненциально при формульной модели, а возврат игроку одинаков на любом уровне.
      */
     public double[] modelLadder() {
       double[] ladder = new double[levels + 1];

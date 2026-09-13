@@ -225,6 +225,12 @@ public class GameController {
     double[] ladderOverride = body.containsKey("ladderOverride")
         ? doubles(body.get("ladderOverride"))
         : previousLadder == null ? new double[0] : Arrays.copyOf(previousLadder, previousLadder.length);
+    // As with the manual ladder, absence preserves a published table while an explicit []
+    // deliberately switches the theme back to the exponential hazard formula.
+    double[] previousHazards = old.hazardOverride();
+    double[] hazardOverride = body.containsKey("hazardOverride")
+        ? doubles(body.get("hazardOverride"))
+        : previousHazards == null ? new double[0] : Arrays.copyOf(previousHazards, previousHazards.length);
 
     return new Config(theme,
         text(body, "gameId", old.gameId()),
@@ -238,6 +244,7 @@ public class GameController {
         number(body, "baseHazard", old.baseHazard()).doubleValue(),
         number(body, "hazardGrowth", old.hazardGrowth()).doubleValue(),
         number(body, "maxHazard", old.maxHazard()).doubleValue(),
+        hazardOverride,
         number(body, "rtp", old.rtp()).doubleValue(),
         ladderOverride,
         number(body, "minWinAmount", old.minWinAmount()).longValue(),
@@ -254,9 +261,15 @@ public class GameController {
   }
 
   private static double[] doubles(Object value) {
-    if (!(value instanceof List<?> list)) return new double[0];
+    if (value == null) return new double[0];
+    if (!(value instanceof List<?> list))
+      throw new IllegalArgumentException("Значение должно быть массивом чисел");
     double[] result = new double[list.size()];
-    for (int i = 0; i < list.size(); i++) result[i] = list.get(i) instanceof Number n ? n.doubleValue() : 0;
+    for (int i = 0; i < list.size(); i++) {
+      if (!(list.get(i) instanceof Number n))
+        throw new IllegalArgumentException("Значения массива должны быть числами");
+      result[i] = n.doubleValue();
+    }
     return result;
   }
 
@@ -296,6 +309,9 @@ public class GameController {
     map.put("baseHazard", config.baseHazard());
     map.put("hazardGrowth", config.hazardGrowth());
     map.put("maxHazard", config.maxHazard());
+    // Empty means formula; a complete table is returned verbatim for the next partial PUT.
+    map.put("hazardOverride", config.hasCustomHazards() ? Arrays.stream(config.hazardOverride()).boxed().toList() : List.of());
+    map.put("hazardSource", config.hasCustomHazards() ? "custom" : "formula");
     map.put("rtp", config.rtp());
     map.put("boosterWeights", Arrays.stream(config.boosterProbabilities()).boxed().toList());
     map.put("ladder", Arrays.stream(ladder).boxed().toList());

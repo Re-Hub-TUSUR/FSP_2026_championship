@@ -32,7 +32,7 @@ export interface ScratchResult { prize: number; tickets: number; balance: number
 export interface LotteryOffer { eligible: boolean; reason?: string; tickets: number; price: number; fullPrice: number; payout: number; timeoutSeconds: number }
 export interface LeaderRow { id: string; username: string; balance: number; rank?: number; level: number; points: number; multiplier: number; trend: number; rounds?: number; cashouts?: number; updatedAt?: string }
 export interface Tournament { startedAt: string; endsAt: string; active: boolean; firstPrize: number; secondPrize: number; thirdPrize: number; prizesPaid: boolean }
-export interface RoundProof { roundId: string; commitment: string; configVersion: number; seed?: string; popLevel?: number; boosterLevel?: number; ladder?: number[]; crashMultiplier?: number; formula?: string }
+export interface RoundProof { roundId: string; commitment: string; configVersion: number; seed?: string; popLevel?: number; boosterLevel?: number; ladder?: number[]; crashMultiplier?: number; formula?: string; hazardSource?: 'formula' | 'custom'; hazardTable?: number[] }
 export interface AdminUser { id: string; username: string; role: string; blocked: boolean; balance: number; points: number; level: number; createdAt?: string }
 export interface BetOption { id: string; amount: number; boosterMultiplier: number; boosterChance?: number; ladder?: number[] }
 export interface LevelRow { level: number; multiplier: number; popChance: number; boosterChance?: number; expectedReturn?: number }
@@ -42,6 +42,8 @@ export interface GameConfig {
   theme: Theme; levels: number; betOptions: BetOption[];
   pointsPerLevel: number; pointsCashoutBonus?: number; pointsBoosterBonus?: number;
   baseHazard?: number; hazardGrowth?: number; maxHazard?: number; rtp?: number;
+  /** Ручные вероятности взрыва по уровням; пустой массив означает расчёт по формуле. */
+  hazardOverride?: number[]; hazardSource?: 'formula' | 'custom';
   boosterWeights?: number[]; ladder?: number[]; ladderOverride?: number[]; ladderSource?: 'formula' | 'custom';
   levelTable?: LevelRow[]; maxMultiplier?: number; minWinAmount?: number; popupTimeout?: number; version?: number;
 }

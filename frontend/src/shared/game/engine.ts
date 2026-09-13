@@ -13,6 +13,8 @@ export interface EngineConfig {
   hazardGrowth: number;
   maxHazard: number;
   rtp: number;
+  /** Необязательные ручные шансы взрыва по уровням. */
+  hazardOverride?: number[];
 }
 
 /** Зеркало Config.defaults на бэкенде: используется, когда API недоступен. */
@@ -21,9 +23,21 @@ export const ENGINE_CONFIG: Record<Theme, EngineConfig> = {
   GREEN: { levels: 9, baseHazard: 0.1, hazardGrowth: 1.25, maxHazard: 0.6, rtp: 0.96 }
 };
 
-/** Первый подъём без риска, дальше шанс взрыва растёт экспоненциально вместе с давлением в шаре. */
-export const hazardAt = (config: EngineConfig, level: number) =>
-  level <= SAFE_LEVELS ? 0 : Math.min(config.maxHazard, config.baseHazard * Math.pow(config.hazardGrowth, level - 1));
+const hasValidHazardOverride = (config: EngineConfig) => {
+  const override = config.hazardOverride;
+  if (!override || override.length !== config.levels || override[0] !== 0) return false;
+  return override.every((chance) => Number.isFinite(chance) && chance >= 0 && chance <= 0.95);
+};
+
+/** Первый подъём без риска, дальше шанс взрыва берётся вручную либо растёт по формуле. */
+export const hazardAt = (config: EngineConfig, level: number) => {
+  if (level <= SAFE_LEVELS) return 0;
+
+  const override = config.hazardOverride;
+  if (hasValidHazardOverride(config) && level <= config.levels) return override![level - 1];
+
+  return Math.min(config.maxHazard, config.baseHazard * Math.pow(config.hazardGrowth, level - 1));
+};
 
 /** Коэффициент уровня обратен вероятности до него долететь — отсюда экспоненциальный рост. */
 export function buildLadder(config: EngineConfig): number[] {

@@ -27,10 +27,9 @@ import java.util.NoSuchElementException;
 @Service
 public class DailyBonusService {
   public static final int PUZZLE_FRAGMENTS = 6;
+  /** Награда за ежедневный билет: целое число бонусов от MIN_REWARD до MAX_REWARD включительно, все суммы равновероятны. */
   public static final long MIN_REWARD = 10;
-  public static final long MAX_REWARD = 2_000;
-  /** 0.001% = одно попадание из 100 000. */
-  public static final int JACKPOT_ONE_IN = 100_000;
+  public static final long MAX_REWARD = 100;
 
   public enum TicketState { LOCKED, AVAILABLE, SCRATCHED }
 
@@ -166,15 +165,9 @@ public class DailyBonusService {
     return snapshot(account, daily, date);
   }
 
-  /**
-   * Сумма 2000 выпадает ровно при одном из 100 000 равновероятных результатов
-   * SecureRandom, то есть с шансом 0.001%. Все остальные целые суммы диапазона
-   * 10..1999 доступны равномерно во второй выборке.
-   */
+  /** Равновероятная целая награда от MIN_REWARD до MAX_REWARD включительно — от 10 до 100 бонусов. */
   static long drawReward(SecureRandom random) {
-    int roll = random.nextInt(JACKPOT_ONE_IN);
-    if (roll == 0) return MAX_REWARD;       // 0.001%
-    return MIN_REWARD + random.nextInt((int) (MAX_REWARD - MIN_REWARD));
+    return MIN_REWARD + random.nextInt((int) (MAX_REWARD - MIN_REWARD + 1));
   }
 
   private AccountEntity lockAccount(String accountId) {

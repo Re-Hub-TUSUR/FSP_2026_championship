@@ -17,8 +17,8 @@ export interface EngineConfig {
 
 /** Зеркало Config.defaults на бэкенде: используется, когда API недоступен. */
 export const ENGINE_CONFIG: Record<Theme, EngineConfig> = {
-  RED: { levels: 12, baseHazard: 0.07, hazardGrowth: 1.2, maxHazard: 0.6, rtp: 0.96 },
-  GREEN: { levels: 9, baseHazard: 0.05, hazardGrowth: 1.35, maxHazard: 0.6, rtp: 0.96 }
+  RED: { levels: 12, baseHazard: 0.15, hazardGrowth: 1.14, maxHazard: 0.6, rtp: 0.96 },
+  GREEN: { levels: 9, baseHazard: 0.1, hazardGrowth: 1.25, maxHazard: 0.6, rtp: 0.96 }
 };
 
 /** Первый подъём без риска, дальше шанс взрыва растёт экспоненциально вместе с давлением в шаре. */

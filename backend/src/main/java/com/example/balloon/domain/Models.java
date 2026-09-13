@@ -47,17 +47,24 @@ public final class Models {
                        double[] ladderOverride, long minWinAmount, int popupTimeout, long version) {
 
     /**
+     * Порог выигрыша для «Закрепи успех» по умолчанию — минимальная ставка: предложение приходит
+     * раз в OFFER_EVERY_WINS выигрышей при любой ставке. Администратор может поднять порог в панели.
+     */
+    public static final long DEFAULT_MIN_WIN_AMOUNT = 10;
+
+    /**
      * Параметры по умолчанию. Первый подъём без риска, дальше шанс взрыва растёт экспоненциально:
-     * на втором уровне 8,4% (красный) и 6,75% (зелёный). Зелёный спокойнее красного на первых
-     * уровнях и в 2,4 раза чаще долетает до вершины.
+     * на втором уровне 17,1% (красный) и 12,5% (зелёный). У обеих тем коэффициент переходит ×2 на пятом
+     * уровне; красный рискованнее и доходит до ×159.75, зелёный спокойнее и доходит до ×23.54, зато
+     * долетает до вершины почти в 7 раз чаще.
      */
     public static Config defaults(Theme theme) {
       int levels = theme == Theme.RED ? 12 : 9;
       return new Config(theme, "balloon", "Воздушный шар", "CRASH", true,
           levels, new long[]{10, 20, 50, 100}, new double[]{1, 2, 3, 4}, defaultBoosterWeights(levels),
           10, 20, 15,
-          theme == Theme.RED ? 0.07 : 0.05, theme == Theme.RED ? 1.20 : 1.35, 0.60, 0.96,
-          new double[0], 50, 10, 1);
+          theme == Theme.RED ? 0.15 : 0.10, theme == Theme.RED ? 1.14 : 1.25, 0.60, 0.96,
+          new double[0], DEFAULT_MIN_WIN_AMOUNT, 10, 1);
     }
 
     public static double[] uniformWeights(int levels) {
@@ -75,29 +82,51 @@ public final class Models {
       return weights;
     }
 
-    /** Шансы первой версии: до первого уровня шар лопался в 12% (красный) и 15,5% (зелёный) раундов. */
-    private static final double[][] LEGACY_MATH = {{0.12, 1.115, 0.60}, {0.155, 1.12, 0.60}};
+    /**
+     * Шансы прошлых версий по умолчанию, {красный, зелёный} × {baseHazard, hazardGrowth, maxHazard}. В первой шар
+     * лопался до первого уровня в 12% и 15,5% раундов, во второй коэффициент доходил до ×2 только к 6–7-му уровню.
+     */
+    private static final double[][][] PREVIOUS_DEFAULT_MATH = {
+        {{0.12, 1.115, 0.60}, {0.155, 1.12, 0.60}},
+        {{0.07, 1.20, 0.60}, {0.05, 1.35, 0.60}}};
+    /** Порог «Закрепи успех» прошлых версий: ставки 10 и 20 ★ до него почти не дотягивали, и предложение не приходило. */
+    static final long PREVIOUS_MIN_WIN_AMOUNT = 50;
 
-    /** Сохранённая тема использует нетронутые шансы первой версии, а не настройки администратора. */
+    /** Сохранённая тема использует нетронутые шансы одной из прошлых версий, а не настройки администратора. */
     public boolean usesLegacyDefaultMath() {
-      double[] legacy = LEGACY_MATH[theme == Theme.RED ? 0 : 1];
-      return Math.abs(baseHazard - legacy[0]) < 1e-9
-          && Math.abs(hazardGrowth - legacy[1]) < 1e-9
-          && Math.abs(maxHazard - legacy[2]) < 1e-9;
+      // Ручная лестница подобрана под старые шансы: их замена изменила бы возврат игроку.
+      if (hasCustomLadder()) return false;
+      for (double[][] version : PREVIOUS_DEFAULT_MATH) {
+        double[] legacy = version[theme == Theme.RED ? 0 : 1];
+        if (Math.abs(baseHazard - legacy[0]) < 1e-9
+            && Math.abs(hazardGrowth - legacy[1]) < 1e-9
+            && Math.abs(maxHazard - legacy[2]) < 1e-9) return true;
+      }
+      return false;
     }
 
-    /** Переводит шансы на текущие значения по умолчанию; ставки, бустеры, очки и прочие настройки сохраняются. */
-    public Config withDefaultMath() {
+    /** Порог апсейла остался значением прошлых версий по умолчанию. */
+    public boolean usesLegacyMinWinAmount() { return minWinAmount == PREVIOUS_MIN_WIN_AMOUNT; }
+
+    public boolean needsDefaultsMigration() { return usesLegacyDefaultMath() || usesLegacyMinWinAmount(); }
+
+    /**
+     * Переводит нетронутые значения прошлых версий на текущие: шансы и порог апсейла обновляются независимо друг
+     * от друга, а ставки, бустеры, очки и прочие настройки администратора сохраняются.
+     */
+    public Config withCurrentDefaults() {
       Config fresh = defaults(theme);
+      boolean math = usesLegacyDefaultMath();
       double[] probabilities = normalizedWeights();
       double[] uniform = uniformWeights(levels);
       boolean untouchedWeights = true;
       for (int i = 0; i < levels; i++) untouchedWeights &= Math.abs(probabilities[i] - uniform[i]) < 1e-9;
       return new Config(theme, gameId, gameName, gameType, active, levels, bets, boosters,
-          untouchedWeights ? defaultBoosterWeights(levels) : boosterWeights,
+          math && untouchedWeights ? defaultBoosterWeights(levels) : boosterWeights,
           pointsPerLevel, pointsCashoutBonus, pointsBoosterBonus,
-          fresh.baseHazard(), fresh.hazardGrowth(), fresh.maxHazard(), rtp,
-          ladderOverride, minWinAmount, popupTimeout, version + 1);
+          math ? fresh.baseHazard() : baseHazard, math ? fresh.hazardGrowth() : hazardGrowth,
+          math ? fresh.maxHazard() : maxHazard, rtp,
+          ladderOverride, usesLegacyMinWinAmount() ? fresh.minWinAmount() : minWinAmount, popupTimeout, version + 1);
     }
 
     /** Шанс взрыва на уровне. Первый подъём без риска, дальше давление в шаре растёт экспоненциально. */
@@ -220,6 +249,13 @@ public final class Models {
     public volatile PuzzleAward reward;
     /** Порядковый номер выигрыша игрока; 0 — раунд проигран. */
     public volatile int winNumber = 0;
+    /**
+     * За этот выигрыш положено предложение «Закрепи успех». Решение принимается при начислении выплаты
+     * атомарно со счётчиком выигрышей, поэтому экран результата застаёт его готовым.
+     */
+    public volatile boolean offerDue = false;
+    /** Первый показ предложения игроку: от него отсчитывается popupTimeout. */
+    public volatile Instant offerShownAt;
     /**
      * Персональное предложение «Закрепи успех» уже было принято для этого
      * раунда.  Поле находится на самом раунде, чтобы две параллельные

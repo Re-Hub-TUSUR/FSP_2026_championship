@@ -4,14 +4,16 @@ import com.example.balloon.domain.Models.Config;
 import com.example.balloon.domain.Models.Theme;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Шансы по умолчанию: первый подъём без риска, зелёный спокойнее красного,
- * возврат игроку в коридоре для любой ставки и любого уровня, где разрешено забрать выигрыш.
+ * Шансы по умолчанию: первый подъём без риска, коэффициенты заметно растут уже к середине полёта,
+ * зелёный спокойнее красного, возврат игроку в коридоре для любой ставки и любого уровня, где разрешено забрать выигрыш.
  */
 class ModelsOddsTest {
 
@@ -25,9 +27,23 @@ class ModelsOddsTest {
   }
 
   @Test
-  void firstRiskyLevelKeepsASoftStart() {
-    assertTrue(Config.defaults(Theme.RED).hazardAt(2) <= 0.085);
-    assertTrue(Config.defaults(Theme.GREEN).hazardAt(2) <= 0.07);
+  void firstRiskyLevelStaysPlayable() {
+    assertTrue(Config.defaults(Theme.RED).hazardAt(2) <= 0.18);
+    assertTrue(Config.defaults(Theme.GREEN).hazardAt(2) <= 0.13);
+  }
+
+  @Test
+  void coefficientsDoubleByTheFifthLevel() {
+    for (Theme theme : Theme.values()) {
+      Config config = Config.defaults(theme);
+      assertTrue(config.ladder()[5] >= 2, theme + ": ×2 не позже пятого уровня");
+      for (double booster : config.boosters())
+        assertTrue(config.ladderForBooster(booster)[6] >= 2, theme + " x" + booster + ": ×2 не позже шестого уровня");
+    }
+    Config red = Config.defaults(Theme.RED);
+    Config green = Config.defaults(Theme.GREEN);
+    assertTrue(red.ladder()[red.levels()] >= 100, "вершина красного шара — от ×100");
+    assertTrue(green.ladder()[green.levels()] >= 20, "вершина зелёного шара — от ×20");
   }
 
   @Test
@@ -79,25 +95,43 @@ class ModelsOddsTest {
   }
 
   @Test
-  void onlyUntouchedLegacyOddsAreMigrated() {
-    Config fresh = Config.defaults(Theme.GREEN);
-    Config legacy = new Config(Theme.GREEN, fresh.gameId(), fresh.gameName(), fresh.gameType(), true,
-        9, new long[]{15, 30, 60, 120}, fresh.boosters(), Config.uniformWeights(9),
-        10, 20, 15, 0.155, 1.12, 0.60, 0.96, new double[0], 50, 10, 8);
-    assertTrue(legacy.usesLegacyDefaultMath());
+  void onlyUntouchedDefaultsOfPreviousVersionsAreMigrated() {
+    // Шансы прошлых версий: первая версия и мягкий старт, отдельно для красной и зелёной темы.
+    double[][][] previous = {{{0.12, 1.115}, {0.07, 1.20}}, {{0.155, 1.12}, {0.05, 1.35}}};
+    for (Theme theme : Theme.values()) {
+      Config fresh = Config.defaults(theme);
+      for (double[] odds : previous[theme.ordinal()]) {
+        Config legacy = stored(theme, odds[0], odds[1], new double[0], Config.PREVIOUS_MIN_WIN_AMOUNT);
+        assertTrue(legacy.usesLegacyDefaultMath(), theme + " " + Arrays.toString(odds));
 
-    Config migrated = legacy.withDefaultMath();
-    assertEquals(fresh.baseHazard(), migrated.baseHazard(), 1e-9);
-    assertEquals(fresh.hazardGrowth(), migrated.hazardGrowth(), 1e-9);
-    assertEquals(0, migrated.boosterProbabilities()[0], 1e-9);
-    assertArrayEquals(legacy.bets(), migrated.bets(), "ставки администратора сохраняются");
-    assertEquals(9, migrated.version());
-    assertFalse(migrated.usesLegacyDefaultMath());
+        Config migrated = legacy.withCurrentDefaults();
+        assertEquals(fresh.baseHazard(), migrated.baseHazard(), 1e-9);
+        assertEquals(fresh.hazardGrowth(), migrated.hazardGrowth(), 1e-9);
+        assertEquals(0, migrated.boosterProbabilities()[0], 1e-9);
+        assertEquals(fresh.minWinAmount(), migrated.minWinAmount(), "порог апсейла прошлых версий обновляется");
+        assertArrayEquals(legacy.bets(), migrated.bets(), "ставки администратора сохраняются");
+        assertEquals(legacy.version() + 1, migrated.version());
+        assertFalse(migrated.needsDefaultsMigration());
+      }
+    }
 
-    Config tuned = new Config(Theme.GREEN, fresh.gameId(), fresh.gameName(), fresh.gameType(), true,
-        9, fresh.bets(), fresh.boosters(), Config.uniformWeights(9),
-        10, 20, 15, 0.2, 1.12, 0.60, 0.96, new double[0], 50, 10, 3);
-    assertFalse(tuned.usesLegacyDefaultMath(), "настроенные администратором шансы не трогаем");
+    assertFalse(stored(Theme.GREEN, 0.2, 1.12, new double[0], 75).needsDefaultsMigration(),
+        "настроенные администратором шансы и порог не трогаем");
+
+    Config thresholdOnly = stored(Theme.GREEN, 0.2, 1.12, new double[0], Config.PREVIOUS_MIN_WIN_AMOUNT).withCurrentDefaults();
+    assertEquals(0.2, thresholdOnly.baseHazard(), 1e-9, "при обновлении порога шансы администратора сохраняются");
+    assertEquals(Config.DEFAULT_MIN_WIN_AMOUNT, thresholdOnly.minWinAmount());
+
+    double[] manual = Arrays.copyOfRange(Config.defaults(Theme.GREEN).ladder(), 1, 10);
+    assertFalse(stored(Theme.GREEN, 0.155, 1.12, manual, 75).usesLegacyDefaultMath(),
+        "ручная лестница подобрана под старые шансы — их не трогаем");
+  }
+
+  private static Config stored(Theme theme, double baseHazard, double hazardGrowth, double[] ladder, long minWinAmount) {
+    Config fresh = Config.defaults(theme);
+    return new Config(theme, fresh.gameId(), fresh.gameName(), fresh.gameType(), true,
+        fresh.levels(), new long[]{15, 30, 60, 120}, fresh.boosters(), Config.uniformWeights(fresh.levels()),
+        10, 20, 15, baseHazard, hazardGrowth, 0.60, 0.96, ladder, minWinAmount, 10, 8);
   }
 
   private static Config withHazard(Config source, double baseHazard, double hazardGrowth) {

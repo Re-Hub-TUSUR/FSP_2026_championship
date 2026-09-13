@@ -7,7 +7,7 @@ import { DailyBonusPanel } from './DailyBonusPanel';
 import { UpsellDialog } from '../lottery/UpsellDialog';
 
 /**
- * Частоту показа определяет сервер — предложение приходит на каждый 4-й выигрыш.
+ * Частоту показа определяет сервер — предложение приходит раз в 3 выигрыша, и решение принимается ещё при начислении выплаты.
  * Клиент лишь не повторяет окно для одного и того же раунда при возврате на экран.
  */
 const upsellKey = (roundId: string) => `balloon-upsell-${roundId}`;

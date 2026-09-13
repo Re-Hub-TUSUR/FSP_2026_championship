@@ -82,7 +82,7 @@ public class LotteryController {
       AccountEntity account = accounts.require(auth);
       // GameService hides ownership mismatches as 404 to avoid leaking round
       // existence to another player.
-      return ResponseEntity.ok(lottery.offerFor(game.getOwned(roundId, account.getUsername()), account));
+      return ResponseEntity.ok(lottery.showOffer(game.getOwned(roundId, account.getUsername()), account));
     } catch (SecurityException e) {
       return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
     } catch (NoSuchElementException e) {

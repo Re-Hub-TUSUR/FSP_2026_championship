@@ -20,9 +20,13 @@ public class LotteryService {
   public static final long TICKET_PRICE = 25;
   /** Скидка на персональное предложение сразу после выигрышного раунда. */
   public static final double OFFER_DISCOUNT = 0.2;
-  /** Предложение показывается на каждом N-м выигрыше игрока, чтобы не раздражать повторами. */
-  public static final int OFFER_EVERY_WINS = 4;
+  /** Предложение приходит раз в N выигрышей игрока, чтобы не раздражать повторами. */
+  public static final int OFFER_EVERY_WINS = 3;
   private static final int MAX_OFFER_TICKETS = 10;
+  /** Сколько секунд после окончания полёта предложение ждёт первого показа: экран результата открывается с задержкой. */
+  static final int OFFER_SHOW_WINDOW_SECONDS = 60;
+  /** Запас на сетевую задержку: нажатие «Купить» в последнюю секунду таймера не должно получать отказ. */
+  static final int OFFER_NETWORK_GRACE_SECONDS = 3;
 
   private final AccountService accounts;
   private final SecureRandom random = new SecureRandom();
@@ -55,14 +59,13 @@ public class LotteryService {
     int timeout = round.config.popupTimeout();
     if (round.offerAccepted) return Offer.declined("Предложение уже использовано", timeout);
     if (!round.flightOver) return Offer.declined("Раунд ещё не завершён", timeout);
-    if (round.endedAt != null && Instant.now().isAfter(round.endedAt.plusSeconds(timeout)))
-      return Offer.declined("Срок действия предложения истёк", timeout);
+    if (expired(round, timeout)) return Offer.declined("Срок действия предложения истёк", timeout);
     if (round.state != RoundState.CASHED_OUT && round.state != RoundState.SETTLED)
       return Offer.declined("Предложение доступно только после успешного cashout", timeout);
     if (round.payout < round.config.minWinAmount())
       return Offer.declined("Выигрыш меньше порога " + round.config.minWinAmount() + " ★", timeout);
-    if (round.winNumber <= 0 || round.winNumber % OFFER_EVERY_WINS != 0)
-      return Offer.declined("Предложение приходит на каждый " + OFFER_EVERY_WINS + "-й выигрыш", timeout);
+    if (!round.offerDue)
+      return Offer.declined("Предложение приходит " + offerFrequency(), timeout);
 
     int tickets = (int) Math.max(1, Math.min(MAX_OFFER_TICKETS, round.payout / TICKET_PRICE));
     long fullPrice = tickets * TICKET_PRICE;
@@ -77,6 +80,33 @@ public class LotteryService {
     if (price > account.getBalance()) return Offer.declined("Недостаточно бонусов для покупки", timeout);
 
     return new Offer(true, null, tickets, price, fullPrice, round.payout, timeout);
+  }
+
+  /** Предложение для экрана результата: первый показ запускает таймер popupTimeout. */
+  public Offer showOffer(Round round, AccountEntity account) {
+    Offer offer = offerFor(round, account);
+    if (offer.eligible()) synchronized (round) { if (round.offerShownAt == null) round.offerShownAt = Instant.now(); }
+    return offer;
+  }
+
+  /**
+   * Таймер идёт с первого показа окна, а не с конца полёта: экран результата открывается через пару секунд
+   * после взрыва, и при отсчёте от конца полёта нажатие «Купить» в последние секунды таймера получало бы отказ.
+   */
+  private static boolean expired(Round round, int timeout) {
+    Instant now = Instant.now();
+    if (round.offerShownAt != null) return now.isAfter(round.offerShownAt.plusSeconds(timeout + OFFER_NETWORK_GRACE_SECONDS));
+    return round.endedAt != null && now.isAfter(round.endedAt.plusSeconds(OFFER_SHOW_WINDOW_SECONDS));
+  }
+
+  /** «раз в 3 выигрыша» с верным склонением — для правил игры и причины отказа. */
+  public static String offerFrequency() {
+    int n = OFFER_EVERY_WINS;
+    if (n <= 1) return "после каждого выигрыша";
+    int mod10 = n % 10, mod100 = n % 100;
+    String word = mod10 == 1 && mod100 != 11 ? "выигрыш"
+        : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "выигрыша" : "выигрышей";
+    return "раз в " + n + " " + word;
   }
 
   /** Покупка набора из каталога вкладки. */

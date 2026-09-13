@@ -24,8 +24,10 @@ public class AccountEntity {
     @Column(nullable=false, columnDefinition="integer default 0 not null") private int puzzlesCompleted;
     /** Купленные лотерейные билеты — имитация апсейла «Закрепи успех». */
     @Column(nullable=false, columnDefinition="integer default 0 not null") private int lotteryTickets;
-    /** Сколько раундов игрок закончил с выигрышем: по этому счётчику показывается предложение «Закрепи успех». */
+    /** Сколько раундов игрок закончил с выигрышем. */
     @Column(nullable=false, columnDefinition="integer default 0 not null") private int wins;
+    /** Выигрыши после последнего предложения «Закрепи успех»: предложение положено, когда их набирается LotteryService.OFFER_EVERY_WINS. */
+    @Column(nullable=false, columnDefinition="integer default 0 not null") private int winsSinceOffer;
     /** One server-authoritative demo top-up is available per configured calendar day. */
     private LocalDate lastTopUpDate;
     @Column(nullable=false) private Instant createdAt;
@@ -43,6 +45,7 @@ public class AccountEntity {
     public void setPuzzleMask(int value){puzzleMask=value; touch();} public void setPuzzlesCompleted(int value){puzzlesCompleted=value; touch();}
     public int getLotteryTickets(){return lotteryTickets;} public void setLotteryTickets(int value){lotteryTickets=value; touch();}
     public int getWins(){return wins;} public void setWins(int value){wins=value; touch();}
+    public int getWinsSinceOffer(){return winsSinceOffer;} public void setWinsSinceOffer(int value){winsSinceOffer=value; touch();}
     public LocalDate getLastTopUpDate(){return lastTopUpDate;} public void setLastTopUpDate(LocalDate value){lastTopUpDate=value; touch();}
     public void setRole(String role){this.role=role; touch();} public void setBlocked(boolean blocked){this.blocked=blocked; touch();}
     public void setPasswordHash(String value){passwordHash=value; touch();} public void setBalance(long value){balance=value; touch();}

@@ -80,11 +80,11 @@ public class GameService implements CommandLineRunner {
               theme, loaded.levels(), requiredLevels);
           continue;
         }
-        if (loaded.usesLegacyDefaultMath()) {
-          // Шансы темы ни разу не настраивались: переводим её на мягкий старт текущей версии.
-          loaded = loaded.withDefaultMath();
+        if (loaded.needsDefaultsMigration()) {
+          // Шансы или порог апсейла ни разу не настраивались: переводим тему на значения текущей версии.
+          loaded = loaded.withCurrentDefaults();
           persist(loaded, "system");
-          log.info("Тема {}: шансы первой версии обновлены до текущих значений по умолчанию", theme);
+          log.info("Тема {}: нетронутые значения прошлых версий обновлены до текущих значений по умолчанию", theme);
         }
         configs.put(theme, loaded);
       } catch (Exception ignored) {
@@ -449,6 +449,9 @@ public class GameService implements CommandLineRunner {
     round.points = settledPoints;
     round.state = state;
     round.balanceAfter = balanceAfter;
+    // Выигрыш учитывается сразу при начислении, а не в конце полёта: к моменту, когда откроется экран
+    // результата, уже решено, положено ли за него предложение «Закрепи успех».
+    registerWin(round);
     // Cashout только фиксирует выплату: полёт останавливается отдельно, когда шар лопнет.
     if (state != RoundState.CASHED_OUT) endFlight(round);
   }
@@ -497,17 +500,8 @@ public class GameService implements CommandLineRunner {
         }
       }
 
-      // Счётчик выигрышей определяет, на каком раунде показать предложение «Закрепи успех».
-      if (round.payout > 0 && !round.winSettled) {
-        try {
-          round.winNumber = accounts.registerWin(round.userId);
-          round.winSettled = true;
-        }
-        catch (Exception e) {
-          log.warn("Не удалось учесть выигрыш раунда {} пользователя {}: {}", round.id, round.userId, e.getMessage());
-          if (isTerminalSettlementFailure(e)) round.winSettled = true;
-        }
-      }
+      // Обычно выигрыш уже учтён при начислении выплаты; здесь — повтор после сбоя базы.
+      registerWin(round);
 
       try { round.balanceAfter = playerBalance(round); }
       catch (Exception e) {
@@ -528,6 +522,20 @@ public class GameService implements CommandLineRunner {
         round.settling = false;
       }
       if (round.settlementComplete) pruneRetainedRounds();
+    }
+  }
+
+  /** Учитывает выигрыш раунда один раз; вместе со счётчиком решается, положено ли предложение «Закрепи успех». */
+  private void registerWin(Round round) {
+    if (round.payout <= 0 || round.winSettled) return;
+    try {
+      var win = accounts.registerWin(round.userId, round.payout, round.config.minWinAmount(), LotteryService.OFFER_EVERY_WINS);
+      round.winNumber = win.wins();
+      round.offerDue = win.offerDue();
+      round.winSettled = true;
+    } catch (Exception e) {
+      log.warn("Не удалось учесть выигрыш раунда {} пользователя {}: {}", round.id, round.userId, e.getMessage());
+      if (isTerminalSettlementFailure(e)) round.winSettled = true;
     }
   }
 

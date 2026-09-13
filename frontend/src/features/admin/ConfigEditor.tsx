@@ -178,7 +178,7 @@ export function ConfigEditor() {
     <h3 className="admin-group">Апсейл «Закрепи успех»</h3>
     <div className="admin-fields">
       <label>Минимальный выигрыш для предложения <small>MIN_WIN_AMOUNT</small>
-        <input type="number" min={0} value={draft.minWinAmount ?? 50} onChange={(e) => patch({ minWinAmount: +e.target.value })} />
+        <input type="number" min={0} value={draft.minWinAmount ?? 10} onChange={(e) => patch({ minWinAmount: +e.target.value })} />
       </label>
       <label>Автозакрытие окна, сек <small>POPUP_TIMEOUT, 3…60</small>
         <input type="number" min={3} max={60} value={draft.popupTimeout ?? 10} onChange={(e) => patch({ popupTimeout: +e.target.value })} />

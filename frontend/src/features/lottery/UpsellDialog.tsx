@@ -2,8 +2,17 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, type LotteryOffer } from '../../shared/api/client';
 
+/** 1 билет, 3 билета, 5 билетов. */
+const ticketsWord = (count: number) => {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'билет';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'билета';
+  return 'билетов';
+};
+
 /**
- * «Закрепи успех» по п. 1.8: приходит на каждый 4-й выигрыш
+ * «Закрепи успех» по п. 1.8: приходит раз в 3 выигрыша
  * и закрывается сам через popupTimeout секунд, если игрок не взаимодействует с окном.
  */
 export function UpsellDialog({ offer, roundId, onClose }: { offer: LotteryOffer; roundId: string; onClose: () => void }) {
@@ -48,17 +57,17 @@ export function UpsellDialog({ offer, roundId, onClose }: { offer: LotteryOffer;
 
       {done ? <>
         <h2>Билеты у вас!</h2>
-        <p className="muted">{offer.tickets} лотерейных билетов начислено на счёт. Посмотреть их можно во вкладке «Лотерея».</p>
+        <p className="muted">{offer.tickets} {ticketsWord(offer.tickets)} уже на счёте — посмотреть можно во вкладке «Лотерея».</p>
         <img src="/assets/lucky-box.png" alt="" width={120} height={120} style={{ margin: '10px auto' }} />
         <button className="primary" onClick={onClose}>Отлично <span aria-hidden="true">→</span></button>
       </> : <>
         <h2>Вы выиграли {offer.payout} ★</h2>
-        <p className="muted">Закрепите результат: обменяйте часть выигрыша на лотерейные билеты со скидкой.</p>
+        <p className="muted">Закрепите результат: лотерейные билеты со скидкой доступны только в этом окне.</p>
 
         <div className="upsell-offer">
           <img src="/assets/ticket.png" alt="" width={54} height={54} />
           <div>
-            <b>{offer.tickets} билетов</b>
+            <b>{offer.tickets} {ticketsWord(offer.tickets)}</b>
             <small className="muted">вместо <s>{offer.fullPrice} ★</s></small>
           </div>
           <div className="upsell-price">{offer.price} ★</div>

@@ -123,14 +123,23 @@ public class AccountService implements CommandLineRunner {
     public PuzzleAward awardPuzzleFragment(String username){
         return dailyBonus.awardPuzzleFragment(byUsername(username).getId());
     }
-    /** Отмечает выигранный раунд и возвращает порядковый номер выигрыша игрока. */
-    @Transactional public int registerWin(String username){
-        // Multiple rounds may settle on the same scheduler tick. Lock the row
-        // so the win counter (used for the every-Nth upsell offer) cannot lose
-        // an increment under concurrent settlements.
+    /** Учтённый выигрыш: его порядковый номер и положено ли за него предложение «Закрепи успех». */
+    public record WinRecord(int wins, boolean offerDue) {}
+
+    /**
+     * Отмечает выигранный раунд. Предложение положено, когда после прошлого предложения набралось
+     * everyWins выигрышей, а текущий не меньше порога. Выигрыш меньше порога предложение не сжигает:
+     * оно переходит на ближайший подходящий.
+     */
+    @Transactional public WinRecord registerWin(String username,long payout,long minOfferPayout,int everyWins){
+        // Multiple rounds may settle concurrently. Lock the row so the win
+        // counters cannot lose an increment and an offer is granted only once.
         AccountEntity a=byUsernameForUpdate(username);
         a.setWins(a.getWins()+1);
-        return accounts.save(a).getWins();
+        int pending=a.getWinsSinceOffer()+1;
+        boolean offerDue=pending>=Math.max(1,everyWins) && payout>=minOfferPayout;
+        a.setWinsSinceOffer(offerDue?0:pending);
+        return new WinRecord(accounts.save(a).getWins(),offerDue);
     }
 
     /** Покупка лотерейных билетов: списание бонусов и начисление билетов одной транзакцией. */

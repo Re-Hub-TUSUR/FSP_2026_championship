@@ -2,6 +2,11 @@ import type { Theme } from '../api/client';
 
 export const MAX_MULTIPLIER = 10_000;
 
+/** Первый подъём без риска. Зеркало Models.SAFE_LEVELS, MIN_CASHOUT_LEVEL и FIRST_BOOSTER_LEVEL. */
+export const SAFE_LEVELS = 1;
+export const MIN_CASHOUT_LEVEL = SAFE_LEVELS + 1;
+export const FIRST_BOOSTER_LEVEL = MIN_CASHOUT_LEVEL + 1;
+
 export interface EngineConfig {
   levels: number;
   baseHazard: number;
@@ -12,13 +17,13 @@ export interface EngineConfig {
 
 /** Зеркало Config.defaults на бэкенде: используется, когда API недоступен. */
 export const ENGINE_CONFIG: Record<Theme, EngineConfig> = {
-  RED: { levels: 12, baseHazard: 0.07, hazardGrowth: 1.2, maxHazard: 0.6, rtp: 0.96 },
-  GREEN: { levels: 9, baseHazard: 0.05, hazardGrowth: 1.35, maxHazard: 0.6, rtp: 0.96 }
+  RED: { levels: 12, baseHazard: 0.15, hazardGrowth: 1.14, maxHazard: 0.6, rtp: 0.96 },
+  GREEN: { levels: 9, baseHazard: 0.1, hazardGrowth: 1.25, maxHazard: 0.6, rtp: 0.96 }
 };
 
-/** Шанс взрыва на уровне растёт экспоненциально вместе с давлением в шаре. */
+/** Первый подъём без риска, дальше шанс взрыва растёт экспоненциально вместе с давлением в шаре. */
 export const hazardAt = (config: EngineConfig, level: number) =>
-  Math.min(config.maxHazard, config.baseHazard * Math.pow(config.hazardGrowth, level - 1));
+  level <= SAFE_LEVELS ? 0 : Math.min(config.maxHazard, config.baseHazard * Math.pow(config.hazardGrowth, level - 1));
 
 /** Коэффициент уровня обратен вероятности до него долететь — отсюда экспоненциальный рост. */
 export function buildLadder(config: EngineConfig): number[] {
@@ -40,10 +45,11 @@ export const BOOSTER_BUDGET = 0.5;
 /** Шанс, что бустер вообще появится в раунде: сильный бустер выпадает реже. */
 export const boosterAppearChance = (booster: number) => (booster <= 1 ? 0 : Math.min(1, BOOSTER_BUDGET / (booster - 1)));
 
-/** Бустер не выпадает на первом уровне. Зеркало Config.defaultBoosterWeights. */
+/** Бустер выпадает равновероятно начиная с FIRST_BOOSTER_LEVEL. Зеркало Config.defaultBoosterWeights. */
 export function defaultBoosterWeights(levels: number): number[] {
-  if (levels < 2) return [1];
-  return [0, ...Array(levels - 1).fill(1 / (levels - 1))];
+  const first = FIRST_BOOSTER_LEVEL - 1;
+  if (levels <= first) return Array(Math.max(1, levels)).fill(1 / Math.max(1, levels));
+  return [...Array(first).fill(0), ...Array(levels - first).fill(1 / (levels - first))];
 }
 
 /**

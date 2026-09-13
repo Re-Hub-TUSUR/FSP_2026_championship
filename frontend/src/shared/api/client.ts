@@ -41,7 +41,7 @@ export interface GameConfig {
   levelTable?: LevelRow[]; maxMultiplier?: number; minWinAmount?: number; popupTimeout?: number; version?: number;
 }
 export interface Round {
-  roundId: string; state: string; theme: Theme; betAmount: number; boosterMultiplier: number;
+  roundId: string; state: string; theme: Theme; betOptionId?: string; betAmount: number; boosterMultiplier: number;
   boosterLevel?: number; boosterActivated?: boolean; levels: number; level: number; multiplier: number;
   nextMultiplier?: number; ladder?: number[]; potentialPayout?: number; cashedOutMultiplier?: number;
   payout?: number; profit?: number; points: number; balance?: number; balanceAfter?: number;
@@ -488,7 +488,7 @@ export const api = {
       const balance = saveBalance(loadBalance() - option.amount);
       const tierLadder = ladderForBooster(engine, option.boosterMultiplier);
       const round: DemoRound = {
-        roundId: id, state: 'STARTED', theme, betAmount: option.amount, boosterMultiplier: option.boosterMultiplier,
+        roundId: id, state: 'STARTED', theme, betOptionId, betAmount: option.amount, boosterMultiplier: option.boosterMultiplier,
         boosterLevel: Math.random() < boosterAppearChance(option.boosterMultiplier) ? FIRST_BOOSTER_LEVEL + Math.floor(Math.random() * (engine.levels - FIRST_BOOSTER_LEVEL + 1)) : 0,
         boosterActivated: false, flightOver: false,
         levels: engine.levels, level: 0, multiplier: 1, nextMultiplier: tierLadder[1], ladder: tierLadder,

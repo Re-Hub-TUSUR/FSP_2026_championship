@@ -110,7 +110,7 @@ export function RoundView() {
     : phase === 'celebrate' ? 'РАУНД ЗАВЕРШЁН'
     : phase === 'refunded' ? 'СТАВКА ВОЗВРАЩЕНА'
     : phase === 'secured' ? 'ВЫИГРЫШ ЗАФИКСИРОВАН'
-    : 'ИДЁТ ИГРА';
+    : null;
 
   // Лента: 100% — луг у нижней кромки кадра, 0% — космос. Позиция считается от уровня, не от таймера.
   const skyY = `${(100 - (Math.min(level, levels) / levels) * 100).toFixed(2)}%`;
@@ -208,7 +208,7 @@ export function RoundView() {
 
       <div className="flight-topline">
         <span className="round-tag">РАУНД {id.slice(-6).toUpperCase()}</span>
-        <span className={`flight-status ${phase}`}><i /> {status}</span>
+        {status && <span className={`flight-status ${phase}`}><i /> {status}</span>}
       </div>
 
       <Top5Panel />

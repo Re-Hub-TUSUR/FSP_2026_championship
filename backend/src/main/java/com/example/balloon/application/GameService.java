@@ -225,7 +225,7 @@ public class GameService implements CommandLineRunner {
     int boosterLevel = pickBoosterLevel(config, booster);
     double[] ladder = config.ladderForBooster(booster);
     Round round = new Round(id, user, config, bet, booster,
-        seed, commitment, popLevel, boosterLevel, ladder);
+        seed, commitment, popLevel, boosterLevel, ladder, betOption);
 
     // Ставка списывается в одной транзакции с записью раунда: в базе не бывает списанной ставки без раунда.
     transactions.executeWithoutResult(status -> {

@@ -750,6 +750,7 @@ components:
         roundId: { type: string, format: uuid }
         state: { $ref: '#/components/schemas/RoundState' }
         theme: { $ref: '#/components/schemas/Theme' }
+        betOptionId: { type: string, description: "Идентификатор варианта ставки для точного повтора раунда." }
         betAmount: { type: integer, format: int64, minimum: 1 }
         boosterMultiplier: { type: number, format: double }
         boosterLevel: { type: integer, minimum: 0 }

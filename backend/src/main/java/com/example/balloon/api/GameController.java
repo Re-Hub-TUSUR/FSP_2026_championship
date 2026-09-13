@@ -320,6 +320,7 @@ public class GameController {
     map.put("roundId", round.id);
     map.put("state", round.state);
     map.put("theme", round.theme());
+    map.put("betOptionId", round.betOptionId);
     map.put("betAmount", round.betAmount);
     map.put("boosterMultiplier", round.boosterMultiplier);
     map.put("boosterLevel", round.boosterLevel);

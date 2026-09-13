@@ -85,7 +85,7 @@ public class RoundStore {
       double[] ladder = mapper.readValue(entity.getLadderJson(), double[].class);
       Round round = new Round(entity.getId(), entity.getUsername(), config, entity.getBetAmount(),
           entity.getBoosterMultiplier(), entity.getSeed(), entity.getCommitment(), entity.getPopLevel(),
-          entity.getBoosterLevel(), ladder, entity.getStartedAt());
+          entity.getBoosterLevel(), ladder, entity.getStartedAt(), entity.getBetOptionId());
       round.state = RoundState.valueOf(entity.getState());
       round.level = entity.getLevel();
       round.multiplier = entity.getMultiplier();

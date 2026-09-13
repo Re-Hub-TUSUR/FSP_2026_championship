@@ -229,6 +229,8 @@ public final class Models {
   public static class Round {
     public final String id, userId;
     public final Config config;
+    /** Идентификатор варианта ставки, выбранного при старте; нужен для точного повтора раунда. */
+    public final String betOptionId;
     public final long betAmount;
     public final double boosterMultiplier;
     public final String seed, commitment;
@@ -277,16 +279,33 @@ public final class Models {
 
     public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
                  String seed, String commitment, int popLevel, int boosterLevel, double[] ladder) {
-      this(id, userId, config, betAmount, boosterMultiplier, seed, commitment, popLevel, boosterLevel, ladder, Instant.now());
+      this(id, userId, config, betAmount, boosterMultiplier, seed, commitment, popLevel, boosterLevel, ladder, Instant.now(), null);
+    }
+
+    /** Раунд с сохранённым вариантом ставки; старый конструктор выше оставлен для совместимости тестов. */
+    public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
+                 String seed, String commitment, int popLevel, int boosterLevel, double[] ladder,
+                 String betOptionId) {
+      this(id, userId, config, betAmount, boosterMultiplier, seed, commitment, popLevel, boosterLevel,
+          ladder, Instant.now(), betOptionId);
     }
 
     /** Раунд, восстановленный из базы, сохраняет время старта исходного раунда. */
     public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
                  String seed, String commitment, int popLevel, int boosterLevel, double[] ladder, Instant startedAt) {
+      this(id, userId, config, betAmount, boosterMultiplier, seed, commitment, popLevel, boosterLevel,
+          ladder, startedAt, null);
+    }
+
+    /** Восстановленный раунд с идентификатором варианта ставки. */
+    public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
+                 String seed, String commitment, int popLevel, int boosterLevel, double[] ladder,
+                 Instant startedAt, String betOptionId) {
       this.startedAt = startedAt;
       this.id = id;
       this.userId = userId;
       this.config = config;
+      this.betOptionId = betOptionId;
       this.betAmount = betAmount;
       this.boosterMultiplier = boosterMultiplier;
       this.seed = seed;

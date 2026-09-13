@@ -12,7 +12,7 @@ import { UpsellDialog } from '../lottery/UpsellDialog';
  */
 const upsellKey = (roundId: string) => `balloon-upsell-${roundId}`;
 
-/** Через столько секунд бездействия игрок возвращается к выбору ставки (п. 1.5 постановки). */
+/** Через столько секунд бездействия игрок возвращается к выбору ставки. */
 const AUTO_RETURN_SECONDS = 10;
 
 const number = (value: number) => Math.round(value).toLocaleString('ru-RU').replace(/ /g, ' ');
@@ -25,6 +25,8 @@ export function Result() {
   const [secondsLeft, setSecondsLeft] = useState(AUTO_RETURN_SECONDS);
   const [autoReturn, setAutoReturn] = useState(true);
   const [upsell, setUpsell] = useState<LotteryOffer | null>(null);
+  const [replayBusy, setReplayBusy] = useState(false);
+  const [replayError, setReplayError] = useState('');
 
   useEffect(() => {
     if (!round) return;
@@ -84,6 +86,32 @@ export function Result() {
   const potentialMax = refunded ? 0 : round.potentialMax ?? 0;
   const missed = won && potentialMax > (round.payout || 0);
 
+  const replay = async () => {
+    if (replayBusy) return;
+    setReplayBusy(true);
+    setReplayError('');
+    try {
+      // Newer API responses carry the exact option used by the finished round.
+      // The config lookup keeps replay compatible with older running servers.
+      let betOptionId = round.betOptionId;
+      if (!betOptionId) {
+        const config = await api.config(round.theme);
+        const option = config.betOptions.find((candidate) => candidate.amount === round.betAmount
+          && candidate.boosterMultiplier === round.boosterMultiplier);
+        if (!option) throw new Error('Не удалось определить ставку прошлого раунда');
+        betOptionId = option.id;
+      }
+      const nextRound = await api.start(round.theme, betOptionId);
+      client.setQueryData(['round', nextRound.roundId], nextRound);
+      client.invalidateQueries({ queryKey: ['me'] });
+      nav(`/round/${nextRound.roundId}`);
+    } catch (e) {
+      setReplayError(e instanceof Error ? e.message : 'Не удалось запустить следующий раунд');
+    } finally {
+      setReplayBusy(false);
+    }
+  };
+
   return <section className={`result-card ${won ? 'won' : refunded ? 'refunded' : 'lost'}`}>
     <div className="result-icon">{refunded ? '↺' : won ? '✦' : '💥'}</div>
     <span className="eyebrow">{refunded ? 'РАУНД ОТМЕНЁН' : 'РАУНД ЗАВЕРШЁН'}</span>
@@ -115,10 +143,16 @@ export function Result() {
       <b className="num">{number(round.balanceAfter ?? round.balance ?? 0)} ★</b>
     </div>
 
-    <div className="start-row">
+    <div className="start-row result-actions">
       <Link className="text-button" to="/history">Посмотреть историю</Link>
-      <Link className="primary" to="/play">Играть снова <span aria-hidden="true">→</span></Link>
+      <div className="result-action-buttons">
+        <button type="button" className={`primary ${replayBusy ? 'is-loading' : ''}`} disabled={replayBusy} onClick={replay}>
+          {replayBusy ? 'Запускаем…' : 'Играть снова'} <span aria-hidden="true">→</span>
+        </button>
+        <button type="button" className="ghost" disabled={replayBusy} onClick={() => nav('/play', { replace: true })}>Главное меню</button>
+      </div>
     </div>
+    {replayError && <div className="form-error result-replay-error" role="alert">{replayError}</div>}
 
     {autoReturn && !upsell && <div className="auto-return">
       Возврат к выбору ставки через {secondsLeft} с

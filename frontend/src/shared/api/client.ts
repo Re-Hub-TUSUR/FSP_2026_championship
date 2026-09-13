@@ -19,6 +19,11 @@ export interface DailyBonusState {
   balanceAfter?: number;
   nextResetAt?: string;
 }
+export interface LoginRewardState {
+  currentDay: number; completedDay: number; claimedToday: boolean; claimable: boolean;
+  nextResetAt: string; balance: number; puzzleMask: number; lotteryTickets: number;
+  justClaimed?: boolean; awardedCoins?: number; awardedPuzzles?: number; awardedTickets?: number;
+}
 /** Апсейл «Закрепи успех»: каталог наборов и персональное предложение после раунда. */
 export interface TicketPack { id: string; tickets: number; price: number; label: string }
 export interface ScratchPrize { amount: number; chance: number }
@@ -439,6 +444,8 @@ export const api = {
       return demoDailyClaim();
     }
   },
+  loginReward: async (): Promise<LoginRewardState> => request<LoginRewardState>('/login-reward'),
+  claimLoginReward: async (): Promise<LoginRewardState> => request<LoginRewardState>('/login-reward/claim', { method: 'POST' }),
   config: async (theme: Theme): Promise<GameConfig> => {
     try { return await request<GameConfig>(`/game/config?theme=${theme}`); } catch (error) {
       if (!isDemoMode()) throw error;

@@ -127,7 +127,7 @@ export function History() {
       <div><small className="eyebrow">ВСЕГО РАУНДОВ</small><b>{mine.length}</b><span className="muted">красный {red} · зелёный {mine.length - red}</span></div>
       <div><small className="eyebrow">ПРОЦЕНТ ПОБЕД</small><b>{mine.length ? `${((wins.length / mine.length) * 100).toFixed(1)}%` : '0%'}</b><span className="muted">забрал выигрыш · {wins.length} из {mine.length}</span></div>
       <div><small className="eyebrow">РЕКОРД МНОЖИТЕЛЯ</small><b>{best ? `×${best.toFixed(2)}` : '—'}</b><span className="muted">лучшая фиксация</span></div>
-      <div><small className="eyebrow">ЧИСТЫЙ ДОХОД</small><b className={total >= 0 ? 'win' : 'crash'}>{total >= 0 ? '+' : ''}{number(total)} ★</b><span className="muted">по вашим раундам</span></div>
+      <div><small className="eyebrow">ЧИСТЫЙ ДОХОД</small><b className={`coin-value history-net ${total >= 0 ? 'win' : 'crash'}`}>{total >= 0 ? '+' : ''}{number(total)} <img src="/assets/coin.png" alt="" /></b><span className="muted">по вашим раундам</span></div>
     </div>
 
     {source.isLoading ? <div className="card"><div className="spinner" /></div>
@@ -151,12 +151,12 @@ export function History() {
               <img src={round.theme === 'GREEN' ? '/assets/balloon-green.png' : '/assets/balloon-red.png'} alt="" width={18} height={24} />
               {round.theme === 'RED' ? 'Красный' : 'Зелёный'}
             </span>
-            <span><b>{number(round.betAmount)} ★</b>{round.boosterMultiplier > 1 && <small className="history-booster">бустер ×{round.boosterMultiplier}</small>}</span>
+            <span><b className="coin-value">{number(round.betAmount)} <img src="/assets/coin.png" alt="" /></b>{round.boosterMultiplier > 1 && <small className="history-booster">бустер ×{round.boosterMultiplier}</small>}</span>
             <span>ур. {isRefund(round) ? round.level : Math.min(round.popLevel ?? round.level, round.levels)} <small className="muted">из {round.levels}</small></span>
             {isRefund(round)
               ? <span className="badge">ставка возвращена</span>
               : <span className={`badge ${isWin(round) ? 'save' : 'lost'}`}>×{shownMultiplier(round).toFixed(2)} · {isWin(round) ? 'забрал' : 'краш'}</span>}
-            <b className={profit >= 0 ? 'win' : 'crash'}>{profit >= 0 ? '+' : ''}{number(profit)} ★</b>
+            <b className={`coin-value ${profit >= 0 ? 'win' : 'crash'}`}>{profit >= 0 ? '+' : ''}{number(profit)} <img src="/assets/coin.png" alt="" /></b>
             <span className="history-points">+{round.points || 0}</span>
             <span>{round.reward
               ? <span className="history-reward"><img src="/assets/puzzle.png" alt="" width={18} height={18} />Фрагмент #{round.reward.fragment + 1}</span>

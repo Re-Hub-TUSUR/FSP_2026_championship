@@ -55,7 +55,7 @@ export function Admin() {
       {users.isLoading ? <div className="empty"><div className="spinner" /></div> : users.data?.map((user) => <div className="row" key={user.id}>
         <span><b>{user.username}</b><br /><small className="muted">уровень {user.level} · {user.points} XP</small></span>
         <span>{user.role}</span>
-        <span className="num">{number(user.balance)} ★</span>
+        <span className="num coin-value">{number(user.balance)} <img src="/assets/coin.png" alt="" /></span>
         <span className={user.blocked ? 'crash' : 'win'}>{user.blocked ? 'Заблокирован' : 'Аккаунт активен'}</span>
         <span className="admin-actions">
           <button className="ghost" onClick={() => toggle(user.id, user.blocked)}>{user.blocked ? 'Разблокировать' : 'Заблокировать'}</button>

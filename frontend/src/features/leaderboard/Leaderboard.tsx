@@ -49,7 +49,8 @@ export function Leaderboard() {
   const isMe = (row: LeaderRow) => row.id === me.data?.id || row.username === currentName;
   const rankOf = (row: LeaderRow) => players.indexOf(row) + 1;
   const nameOf = (row: LeaderRow) => (isMe(row) ? row.username : maskName(row.username));
-  const prizeFor = (rank: number) => (rank <= 3 ? `${number(prizes[rank - 1])} ★` : '—');
+  const coin = (value: number) => <span className="coin-value">{number(value)} <img src="/assets/coin.png" alt="монет" /></span>;
+  const prizeFor = (rank: number) => rank <= 3 ? coin(prizes[rank - 1]) : '—';
 
   const podium = players.slice(0, 3);
   const rows = useMemo(() => {
@@ -65,12 +66,12 @@ export function Leaderboard() {
     <section className="tournament-hero">
       <span className="eyebrow">ЛИГА 100ЛОТО · ТУРНИР</span>
       <h1>Кубок воздухоплавателей</h1>
-      <p>Призовой фонд <b>{number(prizes.reduce((sum, prize) => sum + prize, 0))} ★</b> делят три лидера рейтинга</p>
+      <p>Призовой фонд <b>{coin(prizes.reduce((sum, prize) => sum + prize, 0))}</b> делят три лидера рейтинга</p>
       <div className="tournament-hero-row">
         <div className="tournament-prizes">
           {prizes.map((prize, index) => <span key={index}>
             <img src={`/assets/medal-${index + 1}.png`} alt="" width={28} height={28} />
-            <b>{index + 1} место</b> {number(prize)} ★
+            <b>{index + 1} место</b> {coin(prize)}
           </span>)}
         </div>
         {clock.active ? <div className="tournament-clock">

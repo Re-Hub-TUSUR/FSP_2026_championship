@@ -64,7 +64,7 @@ export function Lottery() {
     try {
       const result = await api.scratchTicket();
       setRevealed((items) => [{ key: Date.now(), prize: result.prize }, ...items].slice(0, 12));
-      setMessage(`Билет стёрт: +${result.prize} ★ на баланс`);
+      setMessage(`Билет стёрт: +${result.prize} монет на баланс`);
       await refetch();
       client.invalidateQueries({ queryKey: ['me'] });
     } catch (e) {
@@ -77,7 +77,7 @@ export function Lottery() {
   const ticketCount = data.tickets;
   const visibleTickets = Math.min(ticketCount, 12);
   const prizes = data.scratchPrizes ?? [];
-  const prizeRange = prizes.length ? `от ${Math.min(...prizes.map((p) => p.amount))} до ${Math.max(...prizes.map((p) => p.amount))} ★` : '';
+  const prizeRange = prizes.length ? `от ${Math.min(...prizes.map((p) => p.amount))} до ${Math.max(...prizes.map((p) => p.amount))}` : '';
   const pad = (value: number) => String(value).padStart(2, '0');
 
   return <div className="play-layout">
@@ -96,9 +96,8 @@ export function Lottery() {
     <section className="draw-banner">
       <img src="/assets/lucky-box.png" alt="" width={72} height={72} />
       <div>
-        <span className="live-pill"><i /> LIVE</span>
         <h2>Ближайший розыгрыш — сегодня в 20:00</h2>
-        <p>Главный приз 100 000 ★ · Тираж {clock.label}</p>
+        <p>Главный приз <span className="coin-value">100 000 <img src="/assets/coin.png" alt="монет" /></span> · Тираж {clock.label}</p>
       </div>
       <div className="draw-timer">
         <span><b>{pad(clock.hours)}</b><small>часы</small></span>
@@ -121,7 +120,7 @@ export function Lottery() {
           <small className="muted">{pack.label}</small>
           <div className="ticket-price">
             {price} <img src="/assets/coin.png" alt="" width={18} height={18} />
-            <i>{perTicket} ★ за билет</i>
+            <i className="coin-value">{perTicket} <img src="/assets/coin.png" alt="монет" /> за билет</i>
           </div>
           <button className={`primary ${busy === pack.id ? 'is-loading' : ''}`} disabled={!affordable || busy === pack.id} onClick={() => buy(pack.id, pack.tickets)}>
             {busy === pack.id ? 'Покупаем…' : affordable ? 'Купить билеты' : 'Не хватает бонусов'}
@@ -154,7 +153,7 @@ export function Lottery() {
           <small className="muted">№ {String(index + 1).padStart(3, '0')}</small>
         </button>)}
         {revealed.map((item) => <div key={item.key} className="scratch revealed">
-          <b>+{item.prize} ★</b>
+          <b className="coin-value">+{item.prize} <img src="/assets/coin.png" alt="монет" /></b>
           <small className="muted">начислено</small>
         </div>)}
       </div> : <div className="empty">
@@ -169,7 +168,7 @@ export function Lottery() {
       <p className="muted">
         Покупка списывает бонусные баллы и добавляет билеты на счёт. Стёртый билет сразу приносит приз {prizeRange}:
         он разыгрывается и начисляется на сервере, а сам билет списывается.
-        Цена одного билета — {number(data.ticketPrice)} ★, наборы дешевле поштучной покупки.
+        Цена одного билета — <span className="coin-value">{number(data.ticketPrice)} <img src="/assets/coin.png" alt="монет" /></span>, наборы дешевле поштучной покупки.
       </p>
     </section>
   </div>;

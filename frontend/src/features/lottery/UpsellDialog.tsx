@@ -61,22 +61,22 @@ export function UpsellDialog({ offer, roundId, onClose }: { offer: LotteryOffer;
         <img src="/assets/lucky-box.png" alt="" width={120} height={120} style={{ margin: '10px auto' }} />
         <button className="primary" onClick={onClose}>Отлично <span aria-hidden="true">→</span></button>
       </> : <>
-        <h2>Вы выиграли {offer.payout} ★</h2>
+        <h2>Вы выиграли <span className="coin-value">{offer.payout} <img src="/assets/coin.png" alt="" /></span></h2>
         <p className="muted">Закрепите результат: лотерейные билеты со скидкой доступны только в этом окне.</p>
 
         <div className="upsell-offer">
           <img src="/assets/ticket.png" alt="" width={54} height={54} />
           <div>
             <b>{offer.tickets} {ticketsWord(offer.tickets)}</b>
-            <small className="muted">вместо <s>{offer.fullPrice} ★</s></small>
+            <small className="muted">вместо <s className="coin-value">{offer.fullPrice} <img src="/assets/coin.png" alt="" /></s></small>
           </div>
-          <div className="upsell-price">{offer.price} ★</div>
+          <div className="upsell-price coin-value">{offer.price} <img src="/assets/coin.png" alt="" /></div>
         </div>
 
         {error && <div className="form-error">{error}</div>}
 
         <button className={`primary ${busy ? 'is-loading' : ''}`} disabled={busy} onClick={accept} style={{ width: '100%', marginTop: 16 }}>
-          {busy ? 'Покупаем…' : `Купить за ${offer.price} ★`} <span aria-hidden="true">→</span>
+          {busy ? 'Покупаем…' : <span className="coin-value">Купить за {offer.price} <img src="/assets/coin.png" alt="" /></span>} <span aria-hidden="true">→</span>
         </button>
         <button className="upsell-skip" onClick={onClose}>Не сейчас · окно закроется через {secondsLeft} с</button>
       </>}

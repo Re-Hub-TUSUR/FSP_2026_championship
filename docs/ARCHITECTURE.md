@@ -92,8 +92,8 @@ Config.defaults в backend/src/main/java/com/example/balloon/domain/Models.java 
 
 ## 8. Наблюдаемость и проверяемость
 
-Spring Boot Actuator публикует health, info и metrics. Swagger UI, Springdoc, OpenAPI endpoint, PostgreSQL-ledger, журнал событий раунда, Testcontainers и Playwright в коде не подключены.
+Spring Boot Actuator публикует health, info и metrics. Swagger UI (springdoc) доступен по адресу /swagger-ui/index.html — напрямую на backend и через nginx фронтенда — и показывает готовый контракт, а не схему, собранную по контроллерам. Раунды со всеми начислениями хранятся в таблице rounds; PostgreSQL-ledger, Testcontainers и Playwright в коде не подключены.
 
-Фактический REST-контракт описан в docs/api/openapi.yaml. Он специально фиксирует текущие особенности: opaque bearer session, REST polling, owner-scoped GET состояния/proof/cashout/offer, публичную обезличенную историю и неунифицированный формат ошибок.
+Фактический REST-контракт описан в backend/src/main/resources/static/openapi.yaml, backend отдаёт его по адресу /openapi.yaml. Он специально фиксирует текущие особенности: opaque bearer session, REST polling, owner-scoped GET состояния/proof/cashout/offer, публичную обезличенную историю и неунифицированный формат ошибок.
 
 При обычной работе с backend источник состояния раунда — сервер. В frontend предусмотрен локальный fallback-режим только при явном `VITE_DEMO_MODE=true`; он создаёт локальный демонстрационный раунд и не подходит для проверки требования о серверной случайности.

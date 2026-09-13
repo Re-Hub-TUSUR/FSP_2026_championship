@@ -149,6 +149,49 @@ curl -X POST http://localhost:8080/api/v1/rounds/<ROUND_ID>/cashout \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+Серверные операции можно проверить без клиента: в Swagger UI — <http://localhost:3000/swagger-ui/index.html> (ссылка «Swagger / OpenAPI» в футере) или напрямую <http://localhost:8080/swagger-ui/index.html>, кнопка **Authorize** принимает токен из `/auth/login` — либо запросами ниже. Они продолжают пример выше и используют тот же `$TOKEN`.
+
+```bash
+# состояние раунда: уровень, коэффициент, очки, выплата; после окончания полёта — seed и уровень взрыва
+curl http://localhost:8080/api/v1/rounds/<ROUND_ID> -H "Authorization: Bearer $TOKEN"
+
+# история своих раундов из базы: ставка, выплата, очки, фрагмент пазла, commitment
+curl "http://localhost:8080/api/v1/rounds/mine?limit=5" -H "Authorization: Bearer $TOKEN"
+
+# проверка честности: раскрытый seed и точка взрыва; sha256(seed:roundId:configVersion) совпадает с commitment
+curl http://localhost:8080/api/v1/rounds/<ROUND_ID>/proof -H "Authorization: Bearer $TOKEN"
+
+# баланс и очки аккаунта после начислений
+curl http://localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"
+```
+
+Применение конфигурации (сценарий 5): администратор меняет очки за уровень, и уже следующий раунд начисляет новое значение.
+
+```bash
+ADMIN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}' | jq -r .token)
+
+# частичное обновление: остальные параметры темы сохраняются, версия конфигурации растёт
+curl -X PUT "http://localhost:8080/api/v1/admin/config?theme=RED" \
+  -H "Authorization: Bearer $ADMIN" \
+  -H "Content-Type: application/json" \
+  -d '{"pointsPerLevel":25}'
+
+# новый раунд: каждое пересечение уровня добавляет 25 очков (поле points в GET /rounds/<ROUND_ID>)
+curl -X POST http://localhost:8080/api/v1/rounds \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: demo-$(date +%s)" \
+  -d '{"theme":"RED","betOptionId":"red-x1"}'
+
+# вернуть прежнее значение
+curl -X PUT "http://localhost:8080/api/v1/admin/config?theme=RED" \
+  -H "Authorization: Bearer $ADMIN" \
+  -H "Content-Type: application/json" \
+  -d '{"pointsPerLevel":10}'
+```
+
 Основные маршруты:
 
 | Метод | Путь | Назначение |
@@ -172,7 +215,7 @@ curl -X POST http://localhost:8080/api/v1/rounds/<ROUND_ID>/cashout \
 | `POST` | `/admin/config/reset` | Сброс темы к значениям по умолчанию |
 | `GET`/`POST`/`PUT` | `/admin/users`, `/admin/users/{id}/block`, `/admin/users/{id}/adjust`, `/admin/audit` | Управление пользователями и журнал |
 
-Контракт с моделями ответов — в [docs/api/openapi.yaml](docs/api/openapi.yaml). Realtime реализован опросом: клиент запрашивает `GET /rounds/{id}` раз в 500 мс, а уровень длится 1,5 с — это укладывается в требование обновления не реже раза в секунду. WebSocket/STOMP endpoint `/ws` в текущем backend не реализован и не подключён.
+Контракт с моделями ответов — в [backend/src/main/resources/static/openapi.yaml](backend/src/main/resources/static/openapi.yaml): backend отдаёт его по адресу `/openapi.yaml`, Swagger UI показывает его и позволяет выполнить любой запрос. Realtime реализован опросом: клиент запрашивает `GET /rounds/{id}` раз в 500 мс, а уровень длится 1,5 с — это укладывается в требование обновления не реже раза в секунду. WebSocket/STOMP endpoint `/ws` в текущем backend не реализован и не подключён.
 
 ## Изменения относительно первой версии
 

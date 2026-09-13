@@ -6,10 +6,12 @@ info:
     REST-контракт фактической реализации проекта. Авторизация использует
     непрозрачный bearer-токен сессии, SHA-256 которого хранится в базе backend; это
     не JWT. Раунды, история, рейтинг и турнир тоже хранятся в базе и переживают перезапуск.
-    PostgreSQL, Redis, WebSocket, Flyway и Springdoc в текущем коде не
-    используются.
+    Файл отдаётся backend по адресу /openapi.yaml и открывается в Swagger UI
+    (/swagger-ui/index.html): кнопка Authorize принимает токен из /auth/login.
+    PostgreSQL, Redis и WebSocket в текущем коде не используются.
 servers:
-  - url: http://localhost:8080/api/v1
+  # Относительный адрес: запросы из Swagger UI идут на тот же хост, с которого открыт контракт.
+  - url: /api/v1
 tags:
   - name: auth
   - name: player

@@ -28,3 +28,9 @@ auth:
   session-ttl: P30D
   # Как часто удалять истёкшие сессии, мс.
   session-cleanup-ms: 3600000
+springdoc:
+  swagger-ui:
+    # Swagger UI (/swagger-ui/index.html) показывает готовый контракт вместо схемы, собранной по контроллерам.
+    url: /openapi.yaml
+    try-it-out-enabled: true
+    persist-authorization: true

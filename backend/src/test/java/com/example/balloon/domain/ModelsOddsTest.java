@@ -27,6 +27,41 @@ class ModelsOddsTest {
   }
 
   @Test
+  void manualHazardsDriveRiskSurvivalAndFormulaLadder() {
+    Config defaults = Config.defaults(Theme.RED);
+    double[] manual = new double[defaults.levels()];
+    manual[0] = 0;
+    manual[1] = 0.20;
+    manual[2] = 0.30;
+    Arrays.fill(manual, 3, manual.length, 0.10);
+    Config config = withHazardOverride(defaults, manual);
+
+    assertTrue(config.hasCustomHazards());
+    assertEquals(0, config.hazardAt(1), 1e-12, "первый подъём остаётся безопасным");
+    assertEquals(0.20, config.hazardAt(2), 1e-12);
+    assertEquals(0.30, config.hazardAt(3), 1e-12);
+    assertEquals(0.56, config.survivalAt(3), 1e-12, "S(3) = 1 × (1 - .20) × (1 - .30)");
+
+    double[] ladder = config.modelLadder();
+    assertEquals(1.20, ladder[2], 1e-12, "M(2) = RTP / S(2) при ручном шансе");
+    assertEquals(1.71, ladder[3], 1e-12, "M(3) округляется от RTP / S(3)");
+  }
+
+  @Test
+  void invalidManualHazardsCannotMakeTheFirstLevelDangerous() {
+    Config defaults = Config.defaults(Theme.GREEN);
+    double[] malformed = new double[defaults.levels()];
+    Arrays.fill(malformed, 0.20);
+    malformed[0] = 0.10;
+    Config config = withHazardOverride(defaults, malformed);
+
+    assertFalse(config.hasCustomHazards(), "таблица с риском на первом уровне не должна применяться");
+    assertEquals(0, config.hazardAt(1), 1e-12);
+    assertEquals(defaults.hazardAt(2), config.hazardAt(2), 1e-12,
+        "повреждённый override безопасно откатывается к формуле");
+  }
+
+  @Test
   void firstRiskyLevelStaysPlayable() {
     assertTrue(Config.defaults(Theme.RED).hazardAt(2) <= 0.18);
     assertTrue(Config.defaults(Theme.GREEN).hazardAt(2) <= 0.13);
@@ -127,6 +162,28 @@ class ModelsOddsTest {
         "ручная лестница подобрана под старые шансы — их не трогаем");
   }
 
+  @Test
+  void legacyMigrationDoesNotOverwriteManualHazards() {
+    Config defaults = Config.defaults(Theme.GREEN);
+    double[] manual = new double[defaults.levels()];
+    manual[0] = 0;
+    Arrays.fill(manual, 1, manual.length, 0.20);
+    Config legacyWithManualHazards = withHazardOverride(
+        stored(Theme.GREEN, 0.155, 1.12, new double[0], Config.PREVIOUS_MIN_WIN_AMOUNT), manual);
+
+    assertTrue(legacyWithManualHazards.hasCustomHazards());
+    assertFalse(legacyWithManualHazards.usesLegacyDefaultMath(),
+        "явно опубликованные шансы не являются нетронутыми defaults");
+    assertTrue(legacyWithManualHazards.needsDefaultsMigration(),
+        "миграция старого порога не должна стереть ручную таблицу шансов");
+
+    Config migrated = legacyWithManualHazards.withCurrentDefaults();
+    assertArrayEquals(manual, migrated.hazardOverride());
+    assertEquals(0.155, migrated.baseHazard(), 1e-12);
+    assertEquals(1.12, migrated.hazardGrowth(), 1e-12);
+    assertEquals(Config.DEFAULT_MIN_WIN_AMOUNT, migrated.minWinAmount());
+  }
+
   private static Config stored(Theme theme, double baseHazard, double hazardGrowth, double[] ladder, long minWinAmount) {
     Config fresh = Config.defaults(theme);
     return new Config(theme, fresh.gameId(), fresh.gameName(), fresh.gameType(), true,
@@ -139,6 +196,14 @@ class ModelsOddsTest {
         source.levels(), source.bets(), source.boosters(), source.boosterWeights(),
         source.pointsPerLevel(), source.pointsCashoutBonus(), source.pointsBoosterBonus(),
         baseHazard, hazardGrowth, 0.95, source.rtp(),
+        source.ladderOverride(), source.minWinAmount(), source.popupTimeout(), source.version());
+  }
+
+  private static Config withHazardOverride(Config source, double[] hazardOverride) {
+    return new Config(source.theme(), source.gameId(), source.gameName(), source.gameType(), source.active(),
+        source.levels(), source.bets(), source.boosters(), source.boosterWeights(),
+        source.pointsPerLevel(), source.pointsCashoutBonus(), source.pointsBoosterBonus(),
+        source.baseHazard(), source.hazardGrowth(), source.maxHazard(), hazardOverride, source.rtp(),
         source.ladderOverride(), source.minWinAmount(), source.popupTimeout(), source.version());
   }
 

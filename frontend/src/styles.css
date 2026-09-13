@@ -612,7 +612,10 @@ input:disabled { color: #a3acbd; background: #f4f6fa; }
 .config-hint { display: block; margin-top: 6px; font-size: 12px; }
 .bet-editor { display: grid; gap: 10px; margin-top: 12px; }
 .bet-editor-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-items: end; }
-.admin-preview-table .table-head, .admin-preview-table .row { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.admin-preview-table .table-head, .admin-preview-table .row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.manual-hazard-input { display: flex; align-items: center; gap: 4px; }
+.manual-hazard-input input { min-width: 0; padding-inline: 8px; }
+.manual-hazard-input small { font-size: 12px; font-weight: 800; color: var(--muted-2); }
 .form-success { margin-top: 12px; padding: 10px 12px; color: var(--green-ink); background: var(--green-soft); border: 1px solid #bfe8d6; border-radius: var(--r-chip); font-size: 13px; }
 
 /* Билеты и слоты коллекции */

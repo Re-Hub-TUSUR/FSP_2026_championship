@@ -4,6 +4,7 @@ import com.example.balloon.domain.Models.*;
 import static com.example.balloon.domain.Models.FIRST_BOOSTER_LEVEL;
 import static com.example.balloon.domain.Models.MAX_MULTIPLIER;
 import static com.example.balloon.domain.Models.MIN_CASHOUT_LEVEL;
+import static com.example.balloon.domain.Models.SAFE_LEVELS;
 import com.example.balloon.auth.AccountService;
 import com.example.balloon.config.GameConfigEntity;
 import com.example.balloon.config.GameConfigRepository;
@@ -338,6 +339,9 @@ public class GameService implements CommandLineRunner {
     Config updated = validate(theme, request, config(theme));
     persist(updated, actor);
     configs.put(theme, updated);
+    accounts.audit(actor, "CONFIG_UPDATE",
+        theme + " v" + updated.version() + ": шансы=" + (updated.hasCustomHazards() ? "вручную" : "формула")
+            + ", лестница=" + (updated.hasCustomLadder() ? "вручную" : "формула"));
     return updated;
   }
 
@@ -347,10 +351,11 @@ public class GameService implements CommandLineRunner {
     Config restored = new Config(theme, defaults.gameId(), defaults.gameName(), defaults.gameType(), defaults.active(),
         defaults.levels(), defaults.bets(), defaults.boosters(), defaults.boosterWeights(),
         defaults.pointsPerLevel(), defaults.pointsCashoutBonus(), defaults.pointsBoosterBonus(),
-        defaults.baseHazard(), defaults.hazardGrowth(), defaults.maxHazard(), defaults.rtp(),
+        defaults.baseHazard(), defaults.hazardGrowth(), defaults.maxHazard(), defaults.hazardOverride(), defaults.rtp(),
         new double[0], defaults.minWinAmount(), defaults.popupTimeout(), config(theme).version() + 1);
     persist(restored, actor);
     configs.put(theme, restored);
+    accounts.audit(actor, "CONFIG_RESET", theme + " v" + restored.version() + ": значения по умолчанию");
     return restored;
   }
 
@@ -396,6 +401,7 @@ public class GameService implements CommandLineRunner {
     double maxHazard = request.maxHazard();
     if (!Double.isFinite(maxHazard) || maxHazard < baseHazard || maxHazard > 0.95)
       throw new IllegalArgumentException("Потолок шанса взрыва должен быть между базовым шансом и 0.95");
+    double[] hazardOverride = normalizeHazardOverride(request.hazardOverride(), levels);
     double rtp = request.rtp();
     if (!Double.isFinite(rtp) || rtp < 0.5 || rtp > 1)
       throw new IllegalArgumentException("Возврат игроку (RTP) должен быть от 0.5 до 1.0");
@@ -424,8 +430,28 @@ public class GameService implements CommandLineRunner {
     return new Config(theme, gameId, gameName, gameType, request.active(),
         levels, bets, boosters, weights,
         request.pointsPerLevel(), request.pointsCashoutBonus(), request.pointsBoosterBonus(),
-        baseHazard, hazardGrowth, maxHazard, rtp, ladder,
+        baseHazard, hazardGrowth, maxHazard, hazardOverride, rtp, ladder,
         request.minWinAmount(), request.popupTimeout(), current.version() + 1);
+  }
+
+  /**
+   * Ручная таблица шансов: пустая возвращает формулу, иначе содержит ровно одно значение
+   * на уровень. Первый подъём — обязательное правило игры, поэтому ему нельзя назначить риск.
+   */
+  private double[] normalizeHazardOverride(double[] requested, int levels) {
+    if (requested == null || requested.length == 0) return new double[0];
+    if (requested.length != levels)
+      throw new IllegalArgumentException("Шансов взрыва должно быть ровно " + levels + " — по одному на уровень");
+    double[] hazards = new double[levels];
+    for (int i = 0; i < levels; i++) {
+      double chance = requested[i];
+      if (!Double.isFinite(chance) || chance < 0 || chance > 0.95)
+        throw new IllegalArgumentException("Шанс взрыва уровня должен быть конечным числом от 0 до 0.95");
+      if (i < SAFE_LEVELS && chance != 0)
+        throw new IllegalArgumentException("Первый уровень безопасен: шанс взрыва должен быть равен 0");
+      hazards[i] = chance;
+    }
+    return hazards;
   }
 
   /** Ручная лестница: пустая — считаем по формуле, иначе значения должны строго расти. */
@@ -486,13 +512,7 @@ public class GameService implements CommandLineRunner {
     proof.put("roundId", round.id);
     proof.put("commitment", "sha256:" + round.commitment);
     proof.put("configVersion", round.config.version());
-    if (round.finished()) {
-      proof.put("seed", round.seed);
-      proof.put("popLevel", round.popLevel);
-      proof.put("boosterLevel", round.boosterLevel);
-      proof.put("ladder", round.ladder);
-      proof.put("formula", "hazard(1) = 0; hazard(level >= 2) = min(maxHazard, baseHazard * hazardGrowth^(level-1)); шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
-    }
+    if (round.finished()) addFinishedProof(proof, round);
     return proof;
   }
 
@@ -506,14 +526,31 @@ public class GameService implements CommandLineRunner {
     proof.put("commitment", "sha256:" + round.commitment);
     proof.put("configVersion", round.config.version());
     if (round.finished()) {
-      proof.put("seed", round.seed);
-      proof.put("popLevel", round.popLevel);
-      proof.put("boosterLevel", round.boosterLevel);
-      proof.put("ladder", round.ladder);
+      addFinishedProof(proof, round);
       proof.put("crashMultiplier", round.crashMultiplier());
-      proof.put("formula", "hazard(1) = 0; hazard(level >= 2) = min(maxHazard, baseHazard * hazardGrowth^(level-1)); шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
     }
     return proof;
+  }
+
+  /**
+   * The proof must describe the exact table used by this round.  A configuration can be
+   * edited after a round starts, so exposing current admin settings would not be sufficient.
+   */
+  private static void addFinishedProof(Map<String, Object> proof, Round round) {
+    proof.put("seed", round.seed);
+    proof.put("popLevel", round.popLevel);
+    proof.put("boosterLevel", round.boosterLevel);
+    proof.put("ladder", round.ladder);
+    List<Double> hazards = new ArrayList<>(round.config.levels());
+    for (int level = 1; level <= round.config.levels(); level++) hazards.add(round.config.hazardAt(level));
+    proof.put("hazardTable", hazards);
+    if (round.config.hasCustomHazards()) {
+      proof.put("hazardSource", "custom");
+      proof.put("formula", "hazard(level) берётся из опубликованной ручной таблицы; шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
+    } else {
+      proof.put("hazardSource", "formula");
+      proof.put("formula", "hazard(1) = 0; hazard(level >= 2) = min(maxHazard, baseHazard * hazardGrowth^(level-1)); шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
+    }
   }
 
   /** Один такт полёта. Виден тестам пакета: они двигают раунд по уровням без ожидания таймера. */

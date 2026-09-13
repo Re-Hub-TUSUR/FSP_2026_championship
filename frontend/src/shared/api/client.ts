@@ -68,8 +68,9 @@ const balanceKey = 'balloon-demo-balance';
 const puzzleKey = 'balloon-demo-puzzle';
 const dailyBonusKey = 'balloon-demo-daily-bonus';
 const PUZZLE_FRAGMENTS = 6;
-/** 0.001% в вероятностной записи (один шанс из ста тысяч). */
-export const DAILY_JACKPOT_CHANCE = 0.00001;
+/** Награда за ежедневный билет в демо-режиме — как на сервере: от 10 до 100 бонусов. */
+const DAILY_REWARD_MIN = 10;
+const DAILY_REWARD_MAX = 100;
 
 /**
  * Generates an idempotency key in browsers where `crypto.randomUUID` is not
@@ -224,11 +225,7 @@ function demoDailyClaim(): DailyBonusState {
   const state = demoDailyState();
   if (!state.eligible) throw new Error('Сначала соберите все фрагменты пазла');
   if (state.claimed) return state;
-  // Джекпот отделён явно, чтобы его шанс нельзя было случайно изменить.
-  // Остальные целые суммы диапазона 10..1999 доступны равномерно.
-  const reward = Math.random() < DAILY_JACKPOT_CHANCE
-    ? 2000
-    : 10 + Math.floor(Math.random() * 1990);
+  const reward = DAILY_REWARD_MIN + Math.floor(Math.random() * (DAILY_REWARD_MAX - DAILY_REWARD_MIN + 1));
   saveBalance(loadBalance() + reward);
   return saveDemoDaily({ ...state, claimed: true, ticketAvailable: false, reward });
 }
@@ -470,7 +467,7 @@ export const api = {
         { heading: 'Взрыв шара', text: 'Первый подъём проходит без риска, а начиная со второго уровня шар проходит проверку на разрыв, и шанс взрыва растёт с высотой.' },
         { heading: 'Заберите выигрыш', text: 'Нажмите «Забрать выигрыш» начиная со второго уровня — коэффициент фиксируется, но шар летит дальше до взрыва. На последнем уровне выплата начисляется автоматически.' },
         { heading: 'Бустеры', text: 'Бустер ждёт на случайном уровне начиная с третьего: долетев до него раньше cashout, вы умножаете коэффициент и получаете дополнительные очки.' },
-        { heading: 'Ежедневный билет', text: 'Каждый завершённый раунд даёт недостающий фрагмент дневного пазла. Соберите 6 из 6 и сотрите билет: награда от 10 до 2 000 бонусов, шанс на 2 000 — 0,001%.' },
+        { heading: 'Ежедневный билет', text: 'Каждый завершённый раунд даёт недостающий фрагмент дневного пазла. Соберите 6 из 6 и сотрите билет: награда от 10 до 100 бонусов.' },
         { heading: 'Честная игра', text: 'Результат раунда формируется сервером и подтверждается хешем commitment.' }
       ] };
     }

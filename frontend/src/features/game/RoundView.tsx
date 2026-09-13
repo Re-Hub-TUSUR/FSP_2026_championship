@@ -23,6 +23,9 @@ const COINS = [
   { dx: '110px', dy: '-250px' }, { dx: '210px', dy: '-210px' }
 ];
 
+/** Столько шар доводится до нового уровня — совпадает с --dur-flight в styles.css. */
+const RISE_MS = 1200;
+
 const tierOf = (multiplier: number) =>
   multiplier >= 3 ? 'high' : multiplier >= 2 ? 'mid' : multiplier >= 1.5 ? 'warm' : 'base';
 
@@ -48,6 +51,18 @@ export function RoundView() {
   // Раунд, прерванный перезапуском сервера до cashout, отменяется с возвратом ставки — это не выигрыш.
   const refunded = round?.state === 'REFUNDED';
   const won = !refunded && (round?.payout || 0) > 0;
+  // Сервер заканчивает полёт, не поднимая level на уровень взрыва: там остаётся последний пройденный уровень.
+  // Чтобы шар лопался на том уровне, который засчитан, после конца полёта он доводится до уровня взрыва или вершины.
+  const endLevel = round && flightOver && !refunded && round.popLevel ? Math.min(round.popLevel, round.levels) : round?.level ?? 0;
+  const risesToEnd = Boolean(round) && endLevel > (round?.level ?? 0);
+  const [arrived, setArrived] = useState(false);
+
+  useEffect(() => {
+    if (!flightOver) return;
+    // Взрыв или конфетти показываются, когда шар долетел до уровня, на котором закончился полёт.
+    const timer = setTimeout(() => setArrived(true), risesToEnd ? RISE_MS : 0);
+    return () => clearTimeout(timer);
+  }, [flightOver, risesToEnd]);
 
   useEffect(() => {
     if (!round || !flightOver || transitioning.current) return;
@@ -56,9 +71,9 @@ export function RoundView() {
     client.invalidateQueries({ queryKey: ['daily-bonus'] });
     client.invalidateQueries({ queryKey: ['history'] });
     client.invalidateQueries({ queryKey: ['crashes'] });
-    // Пауза, чтобы игрок увидел взрыв шара, и только затем открывается результат.
-    redirectTimer.current = setTimeout(() => nav(`/round/${id}/result`, { replace: true }), 1900);
-  }, [flightOver, id, nav, client, round]);
+    // Пауза, чтобы игрок увидел подъём до уровня взрыва и сам взрыв, и только затем открывается результат.
+    redirectTimer.current = setTimeout(() => nav(`/round/${id}/result`, { replace: true }), (risesToEnd ? RISE_MS : 0) + 1900);
+  }, [flightOver, id, nav, client, round, risesToEnd]);
 
   useEffect(() => () => { if (redirectTimer.current) clearTimeout(redirectTimer.current); }, []);
 
@@ -96,7 +111,10 @@ export function RoundView() {
   };
 
   const levels = round.levels;
-  const level = round.level;
+  // Уровень на сцене: в полёте — последний пройденный, после конца полёта — уровень взрыва или вершина.
+  const level = flightOver ? endLevel : round.level;
+  // Коэффициент на табло после конца полёта — коэффициент уровня, на котором шар лопнул.
+  const shownMultiplier = flightOver && !refunded ? round.crashMultiplier ?? round.multiplier : round.multiplier;
   const ladder = round.ladder || [];
   const fixedMultiplier = round.cashedOutMultiplier || 0;
   const potential = round.potentialPayout ?? Math.round(round.betAmount * round.multiplier);
@@ -105,7 +123,8 @@ export function RoundView() {
   const boosterPosition = ((Math.max(1, round.boosterLevel ?? 1) - 1) / Math.max(1, levels - 1)) * 100;
   const boosterState = boosterFired ? 'active' : cashedOut || flightOver ? 'lost' : 'waiting';
 
-  const phase = flightOver ? (refunded ? 'refunded' : won ? 'celebrate' : 'crash') : cashedOut ? 'secured' : 'flying';
+  // Пока шар поднимается к уровню взрыва, сцена остаётся в полёте; итог раунда показывается по прибытии.
+  const phase = flightOver && arrived ? (refunded ? 'refunded' : won ? 'celebrate' : 'crash') : cashedOut ? 'secured' : 'flying';
   const status = phase === 'crash' ? 'ШАР ЛОПНУЛ'
     : phase === 'celebrate' ? 'РАУНД ЗАВЕРШЁН'
     : phase === 'refunded' ? 'СТАВКА ВОЗВРАЩЕНА'
@@ -132,8 +151,11 @@ export function RoundView() {
   const note = phase === 'secured'
     ? `Выигрыш ${number(round.payout || 0)} очков зафиксирован по ×${fixedMultiplier.toFixed(2)}. Шар летит дальше${round.multiplier > fixedMultiplier ? ` — могли бы забрать больше: сейчас ×${round.multiplier.toFixed(2)}` : ''}`
     : phase === 'crash' ? `Шар лопнул на уровне ${round.popLevel ?? level + 1} из ${levels}. Ставка не возвращается`
-    : phase === 'celebrate' ? `Шар дошёл до вершины — выплата ${number(round.payout || 0)} начислена автоматически`
+    : phase === 'celebrate' ? (round.state === 'SETTLED'
+      ? `Шар дошёл до вершины — выплата ${number(round.payout || 0)} начислена автоматически`
+      : `Шар лопнул на уровне ${level} из ${levels}, но выигрыш ${number(round.payout || 0)} уже был зафиксирован`)
     : phase === 'refunded' ? 'Полёт прервался из-за перезапуска сервера — ставка вернулась на баланс'
+    : flightOver ? ''
     : level < MIN_CASHOUT_LEVEL ? 'Первый подъём проходит без риска — забрать выигрыш можно со второго уровня'
     : 'Нажмите кнопку, чтобы зафиксировать текущий выигрыш';
 
@@ -165,8 +187,8 @@ export function RoundView() {
       </div>
 
       <div className="flight-column">
-        <div className={`flight-multiplier tier-${tierOf(round.multiplier)}`} key={level}>
-          <span>×{round.multiplier.toFixed(2)}</span>
+        <div className={`flight-multiplier tier-${tierOf(shownMultiplier)}`} key={level}>
+          <span>×{shownMultiplier.toFixed(2)}</span>
         </div>
         <img className="asset-balloon" src={round.theme === 'GREEN' ? '/assets/balloon-green.png' : '/assets/balloon-red.png'} alt="Воздушный шар в полёте" />
         {boosterFired && <div className="booster-flash"><span>×{round.boosterMultiplier} БУСТЕР</span></div>}

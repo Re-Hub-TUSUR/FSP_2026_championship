@@ -152,7 +152,7 @@ export function History() {
               {round.theme === 'RED' ? 'Красный' : 'Зелёный'}
             </span>
             <span><b>{number(round.betAmount)} ★</b>{round.boosterMultiplier > 1 && <small className="history-booster">бустер ×{round.boosterMultiplier}</small>}</span>
-            <span>ур. {round.level} <small className="muted">из {round.levels}</small></span>
+            <span>ур. {isRefund(round) ? round.level : Math.min(round.popLevel ?? round.level, round.levels)} <small className="muted">из {round.levels}</small></span>
             {isRefund(round)
               ? <span className="badge">ставка возвращена</span>
               : <span className={`badge ${isWin(round) ? 'save' : 'lost'}`}>×{shownMultiplier(round).toFixed(2)} · {isWin(round) ? 'забрал' : 'краш'}</span>}

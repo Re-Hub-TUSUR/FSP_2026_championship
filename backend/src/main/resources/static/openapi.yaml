@@ -714,9 +714,9 @@ components:
           type: integer
           format: int64
           minimum: 10
-          maximum: 2000
+          maximum: 100
           nullable: true
-          description: Серверная награда; 2000 имеет вероятность 0.001%.
+          description: Серверная награда — равновероятное целое число бонусов от 10 до 100.
         claimedAt: { type: string, format: date-time, nullable: true }
         nextResetAt: { type: string, format: date-time }
         balance: { type: integer, format: int64, minimum: 0 }

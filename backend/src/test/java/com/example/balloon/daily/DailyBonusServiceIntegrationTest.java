@@ -68,10 +68,15 @@ class DailyBonusServiceIntegrationTest {
   }
 
   @Test
-  void jackpotAndRegularRollsRespectTheSpecifiedBounds() {
-    assertEquals(2_000, DailyBonusService.drawReward(new StubSecureRandom(0)));
-    assertEquals(10, DailyBonusService.drawReward(new StubSecureRandom(1, 0)));
-    assertEquals(1_999, DailyBonusService.drawReward(new StubSecureRandom(99_999, 1_989)));
+  void rewardStaysBetweenTenAndOneHundredBonuses() {
+    assertEquals(10, DailyBonusService.drawReward(new StubSecureRandom(0)));
+    // Заглушка падает на значении вне запрошенной границы, поэтому 100 проверяет и включённый верхний предел.
+    assertEquals(100, DailyBonusService.drawReward(new StubSecureRandom(90)));
+    java.security.SecureRandom random = new java.security.SecureRandom();
+    for (int i = 0; i < 10_000; i++) {
+      long reward = DailyBonusService.drawReward(random);
+      assertTrue(reward >= 10 && reward <= 100, "награда " + reward);
+    }
   }
 
   private AccountEntity account() {
@@ -79,7 +84,7 @@ class DailyBonusServiceIntegrationTest {
     return accounts.save(new AccountEntity(username, "not-used-in-this-test", "USER"));
   }
 
-  /** A deterministic SecureRandom for testing the exact jackpot branch and bounds. */
+  /** A deterministic SecureRandom for testing the exact reward bounds. */
   private static final class StubSecureRandom extends java.security.SecureRandom {
     private final int[] values;
     private int index;

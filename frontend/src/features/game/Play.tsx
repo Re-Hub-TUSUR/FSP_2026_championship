@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type LeaderRow, type Tournament } from '../../shared/api/client';
 import { useStore } from '../../store';
-import { CrashHistory } from './CrashHistory';
 import { RulesDialog } from './RulesDialog';
 
 /** Стопка монет растёт вместе с номиналом ставки. */
@@ -71,6 +70,11 @@ export function Play() {
   const [error, setError] = useState('');
   const [rulesOpen, setRulesOpen] = useState(false);
   const [tournamentOpen, setTournamentOpen] = useState(false);
+  const playDropSound = () => {
+    const sound = new Audio('/assets/drop-click.mp3');
+    sound.volume = 0.7;
+    void sound.play().catch(() => {});
+  };
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const { data: config } = useQuery({ queryKey: ['config', theme], queryFn: () => api.config(theme) });
   const { data: red } = useQuery({ queryKey: ['config', 'RED'], queryFn: () => api.config('RED') });
@@ -112,48 +116,39 @@ export function Play() {
     }
   };
 
-  return <div className="play-layout">
-    <section className="hero-card">
-      <div className="hero-copy">
-        <span className="eyebrow">БОНУСНАЯ ИГРА ПЛАТФОРМЫ 100ЛОТО</span>
-        <h1>Поймайте свой<br /><em>счастливый полёт!</em></h1>
-        <p className="muted">Поднимайтесь выше, открывайте множители и забирайте выигрыш до того, как шар лопнет.</p>
-        <div className="hero-stats">
-          <span><b>{levels}</b><small>уровней</small></span>
-          <span><b>×{(maxMultiplier ?? 0).toFixed(2)}</b><small>максимум</small></span>
-          <span><b>{config?.rtp ? `${Math.round(config.rtp * 100)}%` : '24/7'}</b><small>{config?.rtp ? 'возврат игроку' : 'в игре'}</small></span>
-        </div>
-      </div>
-      <div className="hero-art">
-        <img src={theme === 'GREEN' ? '/assets/balloon-green.png' : '/assets/balloon-red.png'} alt="Воздушный шар" />
+  return <div className="play-layout design-play">
+    <section className="weekly-bonus">
+      <h2>Ежедневный бонус</h2>
+      <div className="bonus-days">
+        {['✓', '20', '30', '2', '40', '2', ''].map((reward, index) => <div className={`bonus-day ${index === 1 ? 'today' : ''}`} key={index}>
+          <b>День {index + 1}</b><span>{index === 6 ? <img className="surprise-icon" src="/assets/secret-box.png" alt="Сюрприз" /> : <>{reward}{index > 0 && index !== 3 && index !== 5 ? <img src="/assets/coin.png" alt="" /> : index === 3 || index === 5 ? <img src="/assets/puzzle-piece.png" alt="" /> : null}</>}</span>
+        </div>)}
       </div>
     </section>
 
-    <CrashHistory />
-
     <section className="setup-card">
       <div className="section-title">
-        <div><span className="eyebrow">ШАГ 1</span><h2>Выберите тему</h2></div>
-        <span className="live-pill"><i /> LIVE</span>
+        <div><h2>Выберите тему</h2></div>
+        <button className="rules-link" onClick={() => setRulesOpen(true)}>ⓘ Правила игры</button>
       </div>
       <div className="theme-grid">
-        <button className={`theme-option ${theme === 'RED' ? 'selected' : ''}`} onClick={() => { setTheme('RED'); setBet(''); }}>
+        <button className={`theme-option ${theme === 'RED' ? 'selected' : ''}`} onClick={() => { playDropSound(); setTheme('RED'); setBet(''); }}>
           <img src="/assets/balloon-red.png" alt="" />
-          <span><b>Красный шар</b><small className="muted">{red?.levels ?? '—'} уровней · до ×{(red?.maxMultiplier ?? 0).toFixed(2)}</small></span>
+          <span><b>Красный шар</b><small>{red?.levels ?? '—'} уровней полёта</small><small>Максимальный коэффициент<br />×{(red?.maxMultiplier ?? 0).toFixed(2)}</small><small>Вероятность «краха» выше,<br />но и максимальный выигрыш</small></span>
         </button>
-        <button className={`theme-option ${theme === 'GREEN' ? 'selected' : ''}`} onClick={() => { setTheme('GREEN'); setBet(''); }}>
+        <button className={`theme-option ${theme === 'GREEN' ? 'selected' : ''}`} onClick={() => { playDropSound(); setTheme('GREEN'); setBet(''); }}>
           <img src="/assets/balloon-green.png" alt="" />
-          <span><b>Зелёный шар</b><small className="muted">{green?.levels ?? '—'} уровней · до ×{(green?.maxMultiplier ?? 0).toFixed(2)}</small></span>
+          <span><b>Зелёный шар</b><small>{green?.levels ?? '—'} уровней полёта</small><small>Максимальный коэффициент<br />×{(green?.maxMultiplier ?? 0).toFixed(2)}</small><small>Шансы забрать выигрыш<br />до «краха» выше</small></span>
         </button>
       </div>
 
       <div className="section-title bet-title">
-        <div><span className="eyebrow">ШАГ 2</span><h2>Выберите ставку</h2></div>
+        <div><h2>Выберите ставку</h2></div>
         <div className="section-actions">
           <button className="text-button tournament-trigger" onClick={() => setTournamentOpen(true)}><img src="/assets/medal-1.png" alt="" /> {tournament?.active === false ? 'Рейтинг' : 'Турнир'}</button>
-          <button className="text-button" onClick={() => setRulesOpen(true)}>Правила игры</button>
         </div>
       </div>
+
       <div className="bet-grid">
         {options.map((option, index) => {
           const locked = !affordable(option.amount);
@@ -172,6 +167,11 @@ export function Play() {
             {locked && <em className="bet-locked">НЕ ХВАТАЕТ</em>}
           </button>;
         })}
+      </div>
+
+      <div className="design-start-row">
+        <div>Максимально возможный выигрыш с этой ставкой <b>{selected ? number(selected.amount * (maxMultiplier ?? 0)) : '—'} <img src="/assets/coin.png" alt="" /></b></div>
+        <button className={`design-start ${busy ? 'is-loading' : ''}`} disabled={!bet || busy} onClick={start}>▶&nbsp; {busy ? 'Запускаем…' : 'Начать игру!'}</button>
       </div>
 
       {ladder.length > 0 && <div className="admin-group">

@@ -134,6 +134,15 @@ function Footer() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const music = new Audio('/assets/birds-background.mp3');
+    music.loop = true;
+    music.volume = 0.22;
+    const startMusic = () => { void music.play().catch(() => {}); };
+    startMusic();
+    window.addEventListener('pointerdown', startMusic, { once: true });
+    return () => { window.removeEventListener('pointerdown', startMusic); music.pause(); music.src = ''; };
+  }, []);
   const location = useLocation();
   const isLanding = location.pathname === '/';
   // Экран полёта занимает весь кадр: ни отступов страницы, ни футера.

@@ -17,16 +17,16 @@ export function Top5Panel() {
   if (!top.length) return null;
 
   return <aside className="top5-panel">
-    <header>
+    <header className="top5-heading">
       <img src="/assets/laurel-left.png" alt="" />
       <b>ТОП 5 ИГРОКОВ</b>
       <img src="/assets/laurel-right.png" alt="" />
     </header>
     <ol>
-      {top.map((row, index) => <li key={row.id || row.username}>
+      {top.map((row, index) => <li key={row.id || row.username} className={`top5-rank rank-${index + 1}`}>
         <img src={`/assets/medal-${index + 1}.png`} alt={`${index + 1} место`} />
         <span>
-          <b>{number(row.points)} <img src="/assets/coin.png" alt="" width={16} height={16} /></b>
+          <b className="top5-score">{number(row.points)} <img src="/assets/coin.png" alt="" width={20} height={20} /></b>
           <small>{row.username}</small>
         </span>
       </li>)}

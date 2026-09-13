@@ -12,6 +12,8 @@ type DailyBonusPanelProps = {
 
 type ScratchPhase = 'idle' | 'scratching' | 'revealed';
 
+/** Keep this in sync with the cover wipe in styles.css. */
+const SCRATCH_DURATION_MS = 1100;
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 function rewardLabel(value: number | null | undefined) {
@@ -56,7 +58,13 @@ export function DailyBonusPanel({ token, profileState, compact = false }: DailyB
   const [now, setNow] = useState(() => Date.now());
   const mounted = useRef(true);
   const popoverRef = useRef<HTMLDivElement>(null);
-  useEffect(() => () => { mounted.current = false; }, []);
+  // StrictMode mounts effects twice in development (setup → cleanup → setup).
+  // Re-arm the guard on every setup so the second, real effect run is allowed
+  // to finish the claim animation.
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   useEffect(() => {
     if (!compact) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -95,12 +103,20 @@ export function DailyBonusPanel({ token, profileState, compact = false }: DailyB
     return data;
   }, [data, profileState]);
   const progress = state ? Math.max(0, Math.min(100, Math.round((state.collected / Math.max(1, state.total)) * 100))) : 0;
-  const reward = state?.claimed ? (phase === 'revealed' ? revealedReward ?? state.reward : state.reward) : null;
+  // The server marks a ticket as claimed before the visual wipe is finished.
+  // Do not let that response replace the ticket while it is still scratching.
+  const reward = phase === 'revealed'
+    ? revealedReward ?? state?.reward ?? null
+    : phase === 'idle' && state?.claimed
+      ? state.reward
+      : null;
   const canScratch = Boolean(state?.ticketAvailable && !state.claimed && phase === 'idle');
-  // The API persists the claim immediately. Keep the ticket mounted while the
-  // visual scratch is still playing, otherwise a fast response would replace
-  // the animation with the result before the player can see it.
-  const showTicket = Boolean((state?.ticketAvailable && !state.claimed) || phase === 'scratching');
+  // Keep the same button mounted for the complete wipe. The explicit phase
+  // check also prevents a stale `ticketAvailable` response from bringing it
+  // back after the reward has already been revealed.
+  const showTicket = phase !== 'revealed' && Boolean(
+    phase === 'scratching' || (state?.ticketAvailable && !state.claimed)
+  );
   const status = useMemo(() => {
     if (!state) return 'загрузка…';
     if (phase === 'scratching') return 'Стираем билет…';
@@ -114,28 +130,41 @@ export function DailyBonusPanel({ token, profileState, compact = false }: DailyB
     // A new day resets the card; an already used ticket opens in its stable result state.
     if (!state?.claimed) {
       if (phase === 'revealed') setPhase('idle');
-      if (revealedReward !== null) setRevealedReward(null);
+      // Keep a response received during the wipe until it is revealed. A
+      // profile refetch can still report `claimed: false` for a short time.
+      if (phase !== 'scratching' && revealedReward !== null) setRevealedReward(null);
       return;
     }
-    if (phase === 'idle' && state.reward != null) setRevealedReward(state.reward);
+    if (phase === 'idle' && state.reward != null && revealedReward !== state.reward) {
+      setRevealedReward(state.reward);
+    }
   }, [signature, state?.claimed, state?.reward, phase, revealedReward]);
 
   const scratch = async () => {
     if (!canScratch || !state) return;
     setError('');
     setPhase('scratching');
+    const startedAt = Date.now();
     try {
       // Claim first: the server reserves the reward atomically. We reveal it only
       // after the scratch animation has had time to play.
       const result = await api.claimDailyBonus();
+      if (!mounted.current) return;
+      // Keep the reward in local state while the query cache is updated. The
+      // render branch above deliberately hides it until phase becomes revealed.
+      setRevealedReward(result.reward);
       client.setQueryData(['daily-bonus'], result);
       client.invalidateQueries({ queryKey: ['me'] });
-      await wait(1100);
+      await wait(Math.max(0, SCRATCH_DURATION_MS - (Date.now() - startedAt)));
       if (!mounted.current) return;
-      setRevealedReward(result.reward);
       setPhase('revealed');
     } catch (value) {
       if (!mounted.current) return;
+      // Let a failed request settle after the same visual interval so a fast
+      // error cannot flash the cover on and off in a single frame.
+      await wait(Math.max(0, SCRATCH_DURATION_MS - (Date.now() - startedAt)));
+      if (!mounted.current) return;
+      setRevealedReward(null);
       setPhase('idle');
       setError(value instanceof Error ? value.message : 'Не удалось стереть билет');
       client.invalidateQueries({ queryKey: ['daily-bonus'] });
@@ -144,7 +173,7 @@ export function DailyBonusPanel({ token, profileState, compact = false }: DailyB
 
   // Защитный слой стирается анимацией, пока сервер уже зафиксировал награду; результат появляется после неё.
   const ticket = showTicket
-    ? <button type="button" className={`daily-ticket ${phase === 'scratching' ? 'scratching' : ''}`} onClick={scratch} disabled={!canScratch} aria-label="Стереть ежедневный лотерейный билет">
+    ? <button type="button" className={`daily-ticket ${phase === 'scratching' ? 'scratching' : ''}`} onClick={scratch} disabled={!canScratch} aria-busy={phase === 'scratching'} aria-label="Стереть ежедневный лотерейный билет">
       <img src="/assets/ticket.png" alt="" />
       <span className="daily-ticket-copy">
         <b>{phase === 'scratching' ? 'Стираем…' : 'Билет получен'}</b>

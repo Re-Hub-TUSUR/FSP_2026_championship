@@ -735,13 +735,15 @@ input:disabled { color: #a3acbd; background: #f4f6fa; }
 .daily-ticket-copy { z-index: 1; display: grid; gap: 2px; }
 .daily-ticket-copy b { font-size: 13.5px; line-height: 1.15; }
 .daily-ticket-copy small { color: #e0e8f5; font-size: 11.5px; line-height: 1.15; }
-.daily-scratch-cover { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: linear-gradient(115deg, #8d98a7, #dde4eb 35%, #7c8998 68%, #e7edf2); color: #31415d; clip-path: inset(0 0 0 0); transition: clip-path 1.08s cubic-bezier(.5, 0, .1, 1); }
+.daily-scratch-cover { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; background: linear-gradient(115deg, #8d98a7, #dde4eb 35%, #7c8998 68%, #e7edf2); color: #31415d; pointer-events: none; transform: translate3d(0, 0, 0); will-change: transform; backface-visibility: hidden; transition: transform 1.1s cubic-bezier(.5, 0, .1, 1); }
 .daily-scratch-cover i { padding: 4px 12px; border: 1px dashed #526276; border-radius: var(--r-pill); font-size: 11px; font-style: normal; font-weight: 900; letter-spacing: .12em; }
-.daily-ticket.scratching .daily-scratch-cover { clip-path: inset(0 100% 0 0); }
-.daily-ticket.scratching::after { content: ''; position: absolute; top: 0; bottom: 0; z-index: 3; width: 36%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .6), transparent); animation: daily-scratch-sweep 1.05s ease-in-out infinite; pointer-events: none; }
+.daily-ticket.scratching { cursor: progress; }
+.daily-ticket.scratching .daily-scratch-cover { animation: daily-scratch-cover-wipe 1.1s cubic-bezier(.5, 0, .1, 1) forwards; transition: none; }
+.daily-ticket.scratching::after { content: ''; position: absolute; left: -38%; top: 0; bottom: 0; z-index: 3; width: 36%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .6), transparent); animation: daily-scratch-sweep 1.05s ease-in-out infinite; pointer-events: none; }
 .daily-ticket-result { cursor: default; border-color: #e0ba59; background: linear-gradient(110deg, #314d80, #1d2944); animation: daily-reward-pop .42s cubic-bezier(.2, .8, .2, 1) both; }
 .daily-ticket-result strong { color: #ffda73; font-family: var(--font-num); font-size: 20px; line-height: 1.05; text-shadow: 0 1px 9px rgba(241, 186, 61, .47); }
-@keyframes daily-scratch-sweep { from { left: -38%; } to { left: 108%; } }
+@keyframes daily-scratch-cover-wipe { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-101%, 0, 0); } }
+@keyframes daily-scratch-sweep { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(405%, 0, 0); } }
 @keyframes daily-reward-pop { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: scale(1); } }
 
 @media (max-width: 760px) {

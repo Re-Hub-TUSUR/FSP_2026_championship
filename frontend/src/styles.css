@@ -450,6 +450,22 @@ input:disabled { color: #a3acbd; background: #f4f6fa; }
   .result-card { padding: 26px 18px; }
   .modal-card { padding: 20px 18px; }
 }
+
+/* TOP-5 leaderboard on the flight screen: bright alpine glass panel inspired by the supplied artwork. */
+.top5-panel{left:clamp(14px,4.8cqw,72px);top:clamp(82px,12cqh,132px);width:clamp(272px,27cqw,380px);padding:24px 24px 18px;border:2px solid rgba(255,255,255,.8);border-radius:28px;background:linear-gradient(165deg,rgba(101,203,244,.78),rgba(38,130,196,.67) 56%,rgba(78,155,197,.72));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 22px 48px rgba(8,43,91,.34),inset 0 1px 0 rgba(255,255,255,.4)}
+.top5-panel:before{content:'';position:absolute;inset:6px;border:1px solid rgba(255,255,255,.2);border-radius:22px;pointer-events:none}
+.top5-panel .top5-heading{position:relative;display:grid;grid-template-columns:42px 1fr 42px;align-items:center;gap:8px;margin:0 0 19px;text-align:center}
+.top5-panel .top5-heading img{width:42px;height:58px;object-fit:contain;filter:drop-shadow(0 3px 3px rgba(118,75,0,.28))}.top5-panel .top5-heading img:first-child{transform:none}.top5-panel .top5-heading img:last-child{transform:none}
+.top5-panel .top5-heading b{font-family:var(--font-num);font-size:clamp(18px,2.2cqw,29px);letter-spacing:.08em;color:#ffe063;text-shadow:0 2px 8px rgba(113,72,3,.25);white-space:nowrap}
+.top5-panel ol{position:relative;margin:0;padding:0;gap:13px}.top5-panel li{gap:14px;min-height:54px}.top5-panel li>img{width:52px;height:52px;filter:drop-shadow(0 5px 6px rgba(24,73,116,.3))}.top5-panel li>span{min-width:0}
+.top5-panel li b.top5-score{font-family:var(--font-num);font-size:clamp(22px,2.6cqw,34px);line-height:1;color:#fff;text-shadow:0 2px 7px rgba(20,67,112,.3)}.top5-panel li b.top5-score img{width:22px;height:22px;object-fit:contain;filter:drop-shadow(0 2px 3px rgba(121,79,0,.28))}
+.top5-panel li small{margin-top:5px;color:rgba(255,255,255,.96);font-size:clamp(12px,1.2cqw,16px);font-weight:700;text-shadow:0 1px 4px rgba(20,67,112,.25)}.top5-panel .text-button{position:relative;display:block;margin:18px auto 0;color:#e8f7ff;text-decoration:none;font-size:11px;text-shadow:0 1px 3px rgba(20,67,112,.3)}.top5-panel .text-button:hover{color:#fff}
+@media(max-width:760px){.top5-panel{left:10px;top:70px;width:min(300px,calc(100% - 20px));padding:16px 15px 13px;border-radius:21px}.top5-panel .top5-heading{grid-template-columns:30px 1fr 30px;margin-bottom:11px}.top5-panel .top5-heading img{width:30px;height:42px}.top5-panel li{gap:9px;min-height:42px}.top5-panel li>img{width:40px;height:40px}.top5-panel li b.top5-score{font-size:22px}.top5-panel li small{font-size:11px}.top5-panel .text-button{margin-top:12px;font-size:10px}}
+@media(max-width:420px){.top5-panel{display:block;left:8px;top:58px;width:calc(100% - 16px);padding:14px 13px 10px}.top5-panel .top5-heading b{font-size:17px}.top5-panel ol{gap:6px}.top5-panel li>img{width:34px;height:34px}.top5-panel li b.top5-score{font-size:19px}.top5-panel li small{margin-top:2px;font-size:10px}}
+
+/* Match the compact reference card: tighter rows, smaller medals, and balanced title ornaments. */
+.flight-screen .top5-panel{width:clamp(260px,25cqw,350px);padding:17px 18px 14px;border-radius:22px}.flight-screen .top5-panel .top5-heading{grid-template-columns:30px 1fr 30px;gap:5px;margin-bottom:12px}.flight-screen .top5-panel .top5-heading img{width:30px;height:42px}.flight-screen .top5-panel .top5-heading b{font-size:clamp(17px,1.9cqw,24px)}.flight-screen .top5-panel ol{gap:7px}.flight-screen .top5-panel li{gap:10px;min-height:42px}.flight-screen .top5-panel li>img{width:40px;height:40px}.flight-screen .top5-panel li b.top5-score{font-size:clamp(21px,2.2cqw,29px)}.flight-screen .top5-panel li b.top5-score img{width:16px;height:16px}.flight-screen .top5-panel li small{margin-top:2px;font-size:12px}.flight-screen .top5-panel .text-button{margin-top:10px;font-size:10px}
+@media(max-width:760px){.flight-screen .top5-panel{width:min(286px,calc(100% - 20px));padding:14px 13px 11px}.flight-screen .top5-panel .top5-heading{grid-template-columns:26px 1fr 26px}.flight-screen .top5-panel .top5-heading img{width:26px;height:36px}.flight-screen .top5-panel li>img{width:36px;height:36px}.flight-screen .top5-panel li b.top5-score{font-size:21px}}
 @media (max-width: 420px) {
   .bet-grid, .ticket-grid, .profile-grid, .result-numbers { grid-template-columns: 1fr 1fr; }
   .flight-multiplier span { font-size: 42px; }
@@ -756,3 +772,6 @@ input:disabled { color: #a3acbd; background: #f4f6fa; }
   .fairness-list { grid-template-columns: 1fr; }
   .landing-cloud.cloud-c { display: none; }
 }
+
+/* Final mobile override: keep the in-flight TOP-5 panel visible. */
+@media (max-width: 420px) { .flight-screen .top5-panel { display: block; } }

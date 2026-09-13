@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type DailyBonusState } from '../../shared/api/client';
 
@@ -224,7 +225,7 @@ export function DailyBonusPanel({ token, profileState, compact = false }: DailyB
         {ticket}
 
         {error && <div className="form-error" role="alert">{error}</div>}
-        <a className="text-button" href="/profile" onClick={() => setPopoverOpen(false)}>Перейти в профиль к пазлу →</a>
+        <Link className="text-button" to="/profile" onClick={() => setPopoverOpen(false)}>Перейти в профиль к пазлу →</Link>
       </div>}
     </div>;
   }

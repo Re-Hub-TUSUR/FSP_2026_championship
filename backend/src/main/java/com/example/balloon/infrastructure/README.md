@@ -1,3 +1,9 @@
-# Infrastructure adapters
+# Пакет `infrastructure`
 
-The MVP uses an in-memory `GameService` so it can run without external services. PostgreSQL/Redis adapters can be added here while preserving the domain API.
+Сюда подключаются внешние адаптеры. Сейчас пакет пуст: хранение на Spring Data JPA и H2 лежит рядом с доменными сущностями, в пакетах `auth`, `config`, `daily`, `rounds` и `tournament`. Игровая модель (`domain`) и сценарии (`application`) не зависят от конкретной базы, поэтому новые адаптеры добавляются без изменения REST API и математической модели.
+
+Что можно подключить:
+
+- **PostgreSQL** вместо файла H2: драйвер в `build.gradle` и настройки `spring.datasource.*`. Контейнер уже поднимается в `infra/docker-compose.yml`.
+- **Redis** как общее хранилище летящих раундов и кэш рейтинга, чтобы запускать несколько экземпляров backend. Сейчас летящие шары живут в памяти `GameService`. Контейнер тоже уже есть в Compose.
+- **Платёжный шлюз и реальная лотерея** вместо внутренних начислений `AccountService` и призов `LotteryService`.

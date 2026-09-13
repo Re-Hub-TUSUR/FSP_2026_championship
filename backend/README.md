@@ -1,23 +1,95 @@
-# Balloon backend
+# Backend «Воздушный шар»
 
-Java 21 / Spring Boot 3 API for the demo game. State is kept in memory so the service starts without PostgreSQL.
+API игры на Java 21 и Spring Boot 3.3. Сервер — единственный источник правды о раунде. Он списывает ставку, по сиду определяет уровень взрыва и положение бустера, фиксирует cashout и начисляет выплату, очки и награды. Клиент только показывает состояние и отправляет команды.
+
+**Работающий стенд:** <http://201.51.26.91:3000/> · Swagger UI: <http://201.51.26.91:3000/swagger-ui/index.html>
+
+Механика, экономика, сценарии проверки и примеры запросов описаны в [корневом README](../README.md).
+
+## Запуск
+
+Весь стек из корня репозитория (нужен только Docker):
 
 ```bash
+docker compose -f infra/docker-compose.yml up --build
+```
+
+Только backend, если установлены Java 21 и Gradle 8:
+
+```bash
+cd backend
 gradle bootRun
 ```
 
-API is available at `http://localhost:8080/api/v1`; health at `/actuator/health`.
+- API: `http://localhost:8080/api/v1`
+- Swagger UI: `http://localhost:8080/swagger-ui/index.html`, контракт — `/openapi.yaml` ([src/main/resources/static/openapi.yaml](src/main/resources/static/openapi.yaml))
+- состояние сервиса: `/actuator/health`, также доступны `/actuator/info` и `/actuator/metrics`
 
-The demo account is `demo` with a 1,000-bonus starting balance and no leaderboard points until it completes a round. Start a round with `POST /rounds` and a unique `Idempotency-Key`, poll `GET /rounds/{id}` every second, and call `POST /rounds/{id}/cashout` after level 1. `GET /rounds/{id}/proof` reveals the seed and crash multiplier after settlement.
+Внешние базы не нужны: данные лежат в файле H2 `./data/balloon`, в Docker — на томе `backend-data` (каталог `/app/data`). При первом старте создаются аккаунты `demo` / `demo123` (роль `USER`) и `admin` / `admin123` (роль `ADMIN`). Новый аккаунт получает 1 000 бонусов.
 
-## Daily bonus
+## Пакеты
 
-`GET /daily-bonus` returns the authenticated player's progress for the current
-server day (Europe/Moscow by default). Every completed round adds one missing
-piece to the six-piece puzzle. Once all six pieces are collected, one ticket is
-opened. Scratch it with `POST /daily-bonus/claim` (or `/daily-bonus/scratch`);
-the server chooses a reward from 10 to 2,000 and credits the balance atomically.
-Repeated claims are idempotent and return the already persisted reward. Pass an
-`Idempotency-Key` header or `{ "idempotencyKey": "…" }` in the request body.
-The 2,000 jackpot uses one uniform roll out of 100,000 (0.001%); every other
-integer reward from 10 through 1,999 is selected uniformly.
+Код лежит в `src/main/java/com/example/balloon`.
+
+| Пакет | Назначение |
+| --- | --- |
+| `api` | REST-контроллеры и единая обработка ошибок (`ApiExceptionHandler`) |
+| `domain` | математическая модель (`Models`): темы, лестница коэффициентов, шансы взрыва, бустеры, значения по умолчанию |
+| `application` | `GameService` — жизненный цикл раунда, уровни, cashout и начисления; `LotteryService` — билеты и «Закрепи успех»; `LeaderboardService` — рейтинг и турнир |
+| `auth` | аккаунты, роли, сессии, журнал действий администратора |
+| `config` | опубликованные настройки тем (таблица `game_config`) |
+| `daily` | пазл дня и билет (`DailyBonusService`), семидневный бонус за вход (`LoginRewardService`) |
+| `rounds` | раунды в базе и статистика игроков для рейтинга |
+| `tournament` | срок турнира и факт выплаты призов |
+| `infrastructure` | точка подключения внешних адаптеров, см. [README](src/main/java/com/example/balloon/infrastructure/README.md) |
+
+## Настройки сервиса
+
+Файл `src/main/resources/application.yml`. Любой ключ можно переопределить переменной окружения или аргументом запуска Spring Boot.
+
+| Ключ | По умолчанию | Назначение |
+| --- | --- | --- |
+| `server.port` | `8080` | порт API |
+| `spring.datasource.url` | `jdbc:h2:file:./data/balloon;AUTO_SERVER=TRUE` | файл базы H2 |
+| `spring.jpa.hibernate.ddl-auto` | `update` | схема создаётся и дополняется при старте |
+| `daily-bonus.zone-id` | `Europe/Moscow` | граница суток для пазла, бонуса за вход и пополнения баланса |
+| `auth.session-ttl` | `P30D` | срок сессии с последнего обращения (ISO-8601) |
+| `auth.session-cleanup-ms` | `3600000` | как часто удалять истёкшие сессии, мс |
+| `game.tick-ms` | `1500` | длительность одного уровня, мс; в `application.yml` не задан, действует значение из кода |
+| `springdoc.swagger-ui.url` | `/openapi.yaml` | Swagger UI показывает готовый контракт |
+
+Параметры самой игры — лестница, шансы взрыва, бустеры, очки, порог и таймер апсейла — хранятся в базе. Их меняют через административную панель или `PUT /api/v1/admin/config`. Значения по умолчанию заданы в `domain/Models.java` (`Config.defaults`), справочный снимок лежит в `src/main/resources/game-config.yml`.
+
+## Награды и начисления
+
+- **Пазл дня.** Шесть фрагментов: за каждый завершённый раунд — один случайный недостающий. Сутки считаются по Москве. После 6/6 открывается билет, `POST /daily-bonus/claim` (или `/scratch`) начисляет от 10 до 100 бонусов, все суммы равновероятны. Повтор не начисляет награду второй раз. Ключ идемпотентности передаётся заголовком `Idempotency-Key` или полем `idempotencyKey` в теле (до 128 символов).
+- **Бонус за вход.** `GET /login-reward` показывает состояние, `POST /login-reward/claim` забирает награду. Семидневный цикл: 10, 20 и 30 бонусов, 2 фрагмента пазла, 40 бонусов, 2 фрагмента, лотерейный билет. Пропуск дня начинает цикл заново, после седьмого дня он повторяется. Повторная попытка в тот же день получает `409`.
+- **Пополнение.** `POST /auth/topup` добавляет 500 бонусов не чаще раза в календарный день.
+- **Лотерея.** Наборы билетов покупаются через `POST /lottery/buy`. `POST /lottery/scratch` стирает билет и начисляет приз 5 / 10 / 25 / 50 / 200 бонусов с шансами 50 / 25 / 15 / 8 / 2%.
+- **Турнир.** Длится 14 дней. Три лидера по очкам получают 1 000 / 500 / 250 бонусов, призы выплачиваются один раз.
+
+## Тесты
+
+С Java 21 и Gradle:
+
+```bash
+cd backend
+gradle test
+```
+
+Без локальной Java тесты запускаются в контейнере. Исходники копируются внутрь, репозиторий не засоряется:
+
+```bash
+docker run --rm -v "$PWD/backend:/src:ro" gradle:8.10-jdk21 bash -c "cp -r /src /workspace && cd /workspace && gradle --no-daemon test --console=plain"
+```
+
+| Класс | Что проверяет |
+| --- | --- |
+| `ModelsOddsTest` | шар не лопается на первом уровне; ×2 к пятому уровню; зелёный шар спокойнее красного; ручные шансы взрыва и их проверка; бустер не выпадает раньше своего уровня; возврат игроку в коридоре для каждой ставки; перенос настроек прошлых версий |
+| `ModelsConfigTest` | число уровней тем, строго растущие лестницы, влияние бустера на коэффициент |
+| `GameServiceSecurityIntegrationTest` | чужой раунд недоступен; ставка только из четырёх вариантов своей темы; публикация шансов по уровням; повторы с одним `Idempotency-Key` создают один раунд и одно списание |
+| `RoundPersistenceIntegrationTest` | история и proof после перезапуска; возврат ставки за прерванный полёт и доигрывание зафиксированного; идемпотентность после перезапуска; рейтинг из базы; турнир переживает перезапуск и платит призы один раз |
+| `LotteryServiceSecurityIntegrationTest` | предложение «Закрепи успех» принадлежит владельцу раунда и принимается один раз; приходит раз в три выигрыша; таймер идёт с показа окна |
+| `LotteryScratchTest` | таблица призов — корректное распределение, средний приз ниже цены самого дешёвого билета |
+| `DailyBonusServiceIntegrationTest` | шестой фрагмент открывает один билет, награда от 10 до 100 и не начисляется дважды |
+| `AccountServiceSecurityIntegrationTest` | в базе хранится только хеш токена; сессии переживают перезапуск, продлеваются, истекают, отзываются при выходе и блокировке; пополнение раз в сутки |

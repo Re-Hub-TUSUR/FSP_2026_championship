@@ -1,7 +1,9 @@
 package com.example.balloon.application;
 
 import com.example.balloon.domain.Models.*;
+import static com.example.balloon.domain.Models.FIRST_BOOSTER_LEVEL;
 import static com.example.balloon.domain.Models.MAX_MULTIPLIER;
+import static com.example.balloon.domain.Models.MIN_CASHOUT_LEVEL;
 import com.example.balloon.auth.AccountService;
 import com.example.balloon.config.GameConfigEntity;
 import com.example.balloon.config.GameConfigRepository;
@@ -188,7 +190,7 @@ public class GameService implements CommandLineRunner {
     synchronized (round) {
       if (round.cashedOut()) return round;
       if (round.flightOver) throw new IllegalStateException("Раунд уже завершён");
-      if (round.level < 1) throw new IllegalStateException("Забрать выигрыш можно после первого уровня");
+      if (round.level < MIN_CASHOUT_LEVEL) throw new IllegalStateException("Забрать выигрыш можно со второго уровня: первый подъём проходит без риска");
       payout(round, RoundState.CASHED_OUT);
       return round;
     }
@@ -285,13 +287,15 @@ public class GameService implements CommandLineRunner {
     if (weights == null || weights.length != levels) {
       weights = Config.uniformWeights(levels);
     } else {
-      double sum = 0;
-      for (double weight : weights) {
+      double eligible = 0;
+      for (int i = 0; i < weights.length; i++) {
+        double weight = weights[i];
         if (!Double.isFinite(weight) || weight < 0)
           throw new IllegalArgumentException("Вероятность бустера должна быть конечной и неотрицательной");
-        sum += weight;
+        if (i + 1 >= FIRST_BOOSTER_LEVEL) eligible += weight;
       }
-      if (sum <= 0) throw new IllegalArgumentException("Хотя бы у одного уровня вероятность бустера должна быть больше нуля");
+      if (eligible <= 0)
+        throw new IllegalArgumentException("Бустер выпадает начиная с " + FIRST_BOOSTER_LEVEL + "-го уровня: задайте вероятность хотя бы для одного из них");
     }
 
     double[] ladder = normalizeLadder(request.ladderOverride(), levels);
@@ -370,7 +374,7 @@ public class GameService implements CommandLineRunner {
       proof.put("popLevel", round.popLevel);
       proof.put("boosterLevel", round.boosterLevel);
       proof.put("ladder", round.ladder);
-      proof.put("formula", "hazard(level) = min(maxHazard, baseHazard * hazardGrowth^(level-1)); шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
+      proof.put("formula", "hazard(1) = 0; hazard(level >= 2) = min(maxHazard, baseHazard * hazardGrowth^(level-1)); шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
     }
     return proof;
   }
@@ -390,7 +394,7 @@ public class GameService implements CommandLineRunner {
       proof.put("boosterLevel", round.boosterLevel);
       proof.put("ladder", round.ladder);
       proof.put("crashMultiplier", round.crashMultiplier());
-      proof.put("formula", "hazard(level) = min(maxHazard, baseHazard * hazardGrowth^(level-1)); шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
+      proof.put("formula", "hazard(1) = 0; hazard(level >= 2) = min(maxHazard, baseHazard * hazardGrowth^(level-1)); шар лопается на первом уровне, где HMAC_SHA256(seed, roundId:level) < hazard(level)");
     }
     return proof;
   }

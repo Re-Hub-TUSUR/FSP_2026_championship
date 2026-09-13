@@ -14,6 +14,19 @@ public final class Models {
    */
   public static final double BOOSTER_BUDGET = 0.5;
 
+  /** Первый подъём без риска: на старте, при ×1.00, шар никогда не лопается. */
+  public static final int SAFE_LEVELS = 1;
+  /**
+   * Забрать выигрыш можно с первого уровня, до которого шар долетел с риском.
+   * Фиксация на безрисковом уровне давала бы гарантированную прибыль при коэффициенте выше единицы.
+   */
+  public static final int MIN_CASHOUT_LEVEL = SAFE_LEVELS + 1;
+  /**
+   * Бустер выпадает только начиная с этого уровня. На первых уровнях коэффициенты почти равны единице:
+   * скидка на бустер упиралась бы в минимальный шаг лестницы и поднимала бы возврат игроку выше 100%.
+   */
+  public static final int FIRST_BOOSTER_LEVEL = MIN_CASHOUT_LEVEL + 1;
+
   public enum Theme { RED, GREEN }
   public enum RoundState { CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED }
 
@@ -34,9 +47,9 @@ public final class Models {
                        double[] ladderOverride, long minWinAmount, int popupTimeout, long version) {
 
     /**
-     * Параметры по умолчанию. Старт мягкий: до первого уровня шар лопается в 7% (красный)
-     * и 5% (зелёный) раундов, поэтому почти в каждом раунде игрок успевает принять решение.
-     * Зелёный спокойнее красного на первых уровнях и в 2,5 раза чаще долетает до вершины.
+     * Параметры по умолчанию. Первый подъём без риска, дальше шанс взрыва растёт экспоненциально:
+     * на втором уровне 8,4% (красный) и 6,75% (зелёный). Зелёный спокойнее красного на первых
+     * уровнях и в 2,4 раза чаще долетает до вершины.
      */
     public static Config defaults(Theme theme) {
       int levels = theme == Theme.RED ? 12 : 9;
@@ -53,14 +66,12 @@ public final class Models {
       return weights;
     }
 
-    /**
-     * Бустер не выпадает на первом уровне: там коэффициент почти равен единице, и скидка
-     * на бустер упёрлась бы в минимальный шаг лестницы, завысив возврат игроку.
-     */
+    /** Веса по умолчанию: бустер равновероятно выпадает на уровнях начиная с FIRST_BOOSTER_LEVEL. */
     public static double[] defaultBoosterWeights(int levels) {
-      if (levels < 2) return uniformWeights(levels);
+      int first = FIRST_BOOSTER_LEVEL - 1;
+      if (levels <= first) return uniformWeights(levels);
       double[] weights = new double[levels];
-      Arrays.fill(weights, 1, levels, 1.0 / (levels - 1));
+      Arrays.fill(weights, first, levels, 1.0 / (levels - first));
       return weights;
     }
 
@@ -78,7 +89,7 @@ public final class Models {
     /** Переводит шансы на текущие значения по умолчанию; ставки, бустеры, очки и прочие настройки сохраняются. */
     public Config withDefaultMath() {
       Config fresh = defaults(theme);
-      double[] probabilities = boosterProbabilities();
+      double[] probabilities = normalizedWeights();
       double[] uniform = uniformWeights(levels);
       boolean untouchedWeights = true;
       for (int i = 0; i < levels; i++) untouchedWeights &= Math.abs(probabilities[i] - uniform[i]) < 1e-9;
@@ -89,8 +100,9 @@ public final class Models {
           ladderOverride, minWinAmount, popupTimeout, version + 1);
     }
 
-    /** Шанс взрыва на уровне: давление в шаре растёт экспоненциально с каждым уровнем. */
+    /** Шанс взрыва на уровне. Первый подъём без риска, дальше давление в шаре растёт экспоненциально. */
     public double hazardAt(int level) {
+      if (level <= SAFE_LEVELS) return 0;
       return Math.min(maxHazard, baseHazard * Math.pow(hazardGrowth, level - 1));
     }
 
@@ -130,13 +142,29 @@ public final class Models {
 
     /** Вероятность выпадения бустера на уровень (line_N_loot_prob), нормированная к единице. */
     public double[] boosterProbabilities() {
+      // Уровни раньше FIRST_BOOSTER_LEVEL исключаются всегда — даже если вероятность для них задал администратор.
+      double[] weights = normalizedWeights();
+      int first = Math.min(FIRST_BOOSTER_LEVEL - 1, levels - 1);
+      double eligible = 0;
+      for (int i = first; i < levels; i++) eligible += weights[i];
+      double[] probabilities = new double[levels];
+      if (eligible <= 0) {
+        Arrays.fill(probabilities, first, levels, 1.0 / (levels - first));
+        return probabilities;
+      }
+      for (int i = first; i < levels; i++) probabilities[i] = weights[i] / eligible;
+      return probabilities;
+    }
+
+    /** Веса администратора, нормированные к единице без правил выпадения; пустые или неверные — равномерные. */
+    private double[] normalizedWeights() {
       if (boosterWeights == null || boosterWeights.length != levels) return uniformWeights(levels);
       double sum = 0;
       for (double weight : boosterWeights) sum += Math.max(0, weight);
       if (sum <= 0) return uniformWeights(levels);
-      double[] probabilities = new double[levels];
-      for (int i = 0; i < levels; i++) probabilities[i] = Math.max(0, boosterWeights[i]) / sum;
-      return probabilities;
+      double[] weights = new double[levels];
+      for (int i = 0; i < levels; i++) weights[i] = Math.max(0, boosterWeights[i]) / sum;
+      return weights;
     }
 
     /** Ожидаемый возврат при выходе на уровне: шанс долететь × коэффициент уровня. */
@@ -250,7 +278,7 @@ public final class Models {
     /** Лучшая выплата, которую можно было забрать в этом раунде. */
     public long potentialMax() {
       int best = Math.min(popLevel - 1, levels());
-      return best < 1 ? 0 : Math.max(1, Math.round(betAmount * multiplierBefore(best)));
+      return best < MIN_CASHOUT_LEVEL ? 0 : Math.max(1, Math.round(betAmount * multiplierBefore(best)));
     }
 
     /** Коэффициент уровня так, как если бы бустер успел сработать до него. */

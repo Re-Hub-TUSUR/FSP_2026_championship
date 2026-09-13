@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../shared/api/client';
+import { MIN_CASHOUT_LEVEL } from '../../shared/game/engine';
 import { CrashHistory } from './CrashHistory';
 import { RulesDialog } from './RulesDialog';
 import { Top5Panel } from './Top5Panel';
@@ -129,12 +130,13 @@ export function RoundView() {
     ? `Выигрыш ${number(round.payout || 0)} очков зафиксирован по ×${fixedMultiplier.toFixed(2)}. Шар летит дальше${round.multiplier > fixedMultiplier ? ` — могли бы забрать больше: сейчас ×${round.multiplier.toFixed(2)}` : ''}`
     : phase === 'crash' ? `Шар лопнул на уровне ${round.popLevel ?? level + 1} из ${levels}. Ставка не возвращается`
     : phase === 'celebrate' ? `Шар дошёл до вершины — выплата ${number(round.payout || 0)} начислена автоматически`
+    : level < MIN_CASHOUT_LEVEL ? 'Первый подъём проходит без риска — забрать выигрыш можно со второго уровня'
     : 'Нажмите кнопку, чтобы зафиксировать текущий выигрыш';
 
   const button = phase === 'secured' ? { label: 'Выигрыш забран', amount: round.payout || 0, disabled: true }
     : phase === 'crash' ? { label: 'Раунд завершён', amount: 0, disabled: true }
     : phase === 'celebrate' ? { label: 'Выплата начислена', amount: round.payout || 0, disabled: true }
-    : { label: 'Забрать выигрыш', amount: level < 1 ? round.betAmount : potential, disabled: level < 1 };
+    : { label: 'Забрать выигрыш', amount: level < MIN_CASHOUT_LEVEL ? round.betAmount : potential, disabled: level < MIN_CASHOUT_LEVEL };
 
   const sceneStyle = { '--level': level, '--sky-y': skyY } as CSSProperties;
   const progressStyle = { '--progress': `${Math.min(100, (level / levels) * 100)}%` } as CSSProperties;

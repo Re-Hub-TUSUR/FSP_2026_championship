@@ -1,4 +1,4 @@
-import { ENGINE_CONFIG, boosterAppearChance, buildLadder, hazardAt, ladderForBooster, rollPopLevel } from '../game/engine';
+import { ENGINE_CONFIG, FIRST_BOOSTER_LEVEL, MIN_CASHOUT_LEVEL, boosterAppearChance, buildLadder, hazardAt, ladderForBooster, rollPopLevel } from '../game/engine';
 
 export type Theme = 'RED' | 'GREEN';
 export interface Me { id?: string; username: string; balance: number; role: string; points?: number; level?: number; blocked?: boolean; puzzleMask?: number; puzzleFragments?: number; puzzleBonus?: number; puzzlesCompleted?: number; dailyBonus?: DailyBonusState; lotteryTickets?: number; wins?: number }
@@ -287,7 +287,7 @@ function endFlight(round: DemoRound) {
   round.reward = awardFragment();
   round.crashMultiplier = round.ladder[Math.min(round.popLevel, round.levels)];
   const best = Math.min(round.popLevel - 1, round.levels);
-  round.potentialMax = best < 1 ? 0 : Math.max(1, Math.round(round.betAmount * (hasBooster(round) && best >= round.boosterLevel ? round.ladder[best] * round.boosterMultiplier : round.ladder[best])));
+  round.potentialMax = best < MIN_CASHOUT_LEVEL ? 0 : Math.max(1, Math.round(round.betAmount * (hasBooster(round) && best >= round.boosterLevel ? round.ladder[best] * round.boosterMultiplier : round.ladder[best])));
   round.balance = loadBalance();
   round.balanceAfter = round.balance;
 }
@@ -435,9 +435,9 @@ export const api = {
       return { title: 'Правила игры', sections: [
         { heading: 'Сделайте ставку', text: 'Выберите красную или зелёную тему и один из четырёх бустеров.' },
         { heading: 'Рост коэффициентов', text: 'Каждый уровень поднимает коэффициент экспоненциально: чем выше шар, тем дороже следующий шаг.' },
-        { heading: 'Взрыв шара', text: 'На каждом уровне шар проходит проверку на разрыв, и шанс взрыва растёт с высотой.' },
-        { heading: 'Заберите выигрыш', text: 'Нажмите «Забрать выигрыш» после первого уровня — коэффициент фиксируется, но шар летит дальше до взрыва. На последнем уровне выплата начисляется автоматически.' },
-        { heading: 'Бустеры', text: 'Бустер ждёт на случайном уровне: долетев до него раньше cashout, вы умножаете коэффициент и получаете дополнительные очки.' },
+        { heading: 'Взрыв шара', text: 'Первый подъём проходит без риска, а начиная со второго уровня шар проходит проверку на разрыв, и шанс взрыва растёт с высотой.' },
+        { heading: 'Заберите выигрыш', text: 'Нажмите «Забрать выигрыш» начиная со второго уровня — коэффициент фиксируется, но шар летит дальше до взрыва. На последнем уровне выплата начисляется автоматически.' },
+        { heading: 'Бустеры', text: 'Бустер ждёт на случайном уровне начиная с третьего: долетев до него раньше cashout, вы умножаете коэффициент и получаете дополнительные очки.' },
         { heading: 'Ежедневный билет', text: 'Каждый завершённый раунд даёт недостающий фрагмент дневного пазла. Соберите 6 из 6 и сотрите билет: награда от 10 до 2 000 бонусов, шанс на 2 000 — 0,001%.' },
         { heading: 'Честная игра', text: 'Результат раунда формируется сервером и подтверждается хешем commitment.' }
       ] };
@@ -457,7 +457,7 @@ export const api = {
       const tierLadder = ladderForBooster(engine, option.boosterMultiplier);
       const round: DemoRound = {
         roundId: id, state: 'STARTED', theme, betAmount: option.amount, boosterMultiplier: option.boosterMultiplier,
-        boosterLevel: Math.random() < boosterAppearChance(option.boosterMultiplier) ? 2 + Math.floor(Math.random() * (engine.levels - 1)) : 0,
+        boosterLevel: Math.random() < boosterAppearChance(option.boosterMultiplier) ? FIRST_BOOSTER_LEVEL + Math.floor(Math.random() * (engine.levels - FIRST_BOOSTER_LEVEL + 1)) : 0,
         boosterActivated: false, flightOver: false,
         levels: engine.levels, level: 0, multiplier: 1, nextMultiplier: tierLadder[1], ladder: tierLadder,
         potentialPayout: option.amount, payout: 0, points: 0, balance, balanceAfter: balance,
@@ -483,7 +483,7 @@ export const api = {
       advance(round);
       if (isCashedOut(round)) return round;
       if (round.flightOver) throw new Error('Раунд уже завершён');
-      if (round.level < 1) throw new Error('Забрать выигрыш можно после первого уровня');
+      if (round.level < MIN_CASHOUT_LEVEL) throw new Error('Забрать выигрыш можно со второго уровня: первый подъём проходит без риска');
       settle(round, 'CASHED_OUT');
       saveRounds(rows);
       return round;

@@ -135,12 +135,12 @@ export function Result() {
     {round.reward?.ticketEligible && <DailyBonusPanel token={localStorage.getItem('balloon-token')} />}
 
     {potentialMax > 0 && <p className={`result-potential ${missed ? 'missed' : ''}`}>
-      Могли выиграть: <b>{number(potentialMax)} ★</b> — шар лопнул на уровне {round.popLevel ?? round.level + 1} из {round.levels}
+      Могли выиграть: <b className="coin-value">{number(potentialMax)} <img src="/assets/coin.png" alt="" /></b> — шар лопнул на уровне {round.popLevel ?? round.level + 1} из {round.levels}
     </p>}
 
     <div className="result-balance">
       <span className="muted">Баланс после раунда</span>
-      <b className="num">{number(round.balanceAfter ?? round.balance ?? 0)} ★</b>
+      <b className="num coin-value">{number(round.balanceAfter ?? round.balance ?? 0)} <img src="/assets/coin.png" alt="" /></b>
     </div>
 
     <div className="start-row result-actions">

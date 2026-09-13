@@ -30,6 +30,9 @@ public class AccountEntity {
     @Column(nullable=false, columnDefinition="integer default 0 not null") private int winsSinceOffer;
     /** One server-authoritative demo top-up is available per configured calendar day. */
     private LocalDate lastTopUpDate;
+    /** Последняя календарная награда и текущий день семидневного цикла (по Москве). */
+    private LocalDate lastLoginRewardDate;
+    @Column(nullable=false, columnDefinition="integer default 0 not null") private int loginRewardDay;
     @Column(nullable=false) private Instant createdAt;
     @Column(nullable=false) private Instant updatedAt;
 
@@ -47,6 +50,8 @@ public class AccountEntity {
     public int getWins(){return wins;} public void setWins(int value){wins=value; touch();}
     public int getWinsSinceOffer(){return winsSinceOffer;} public void setWinsSinceOffer(int value){winsSinceOffer=value; touch();}
     public LocalDate getLastTopUpDate(){return lastTopUpDate;} public void setLastTopUpDate(LocalDate value){lastTopUpDate=value; touch();}
+    public LocalDate getLastLoginRewardDate(){return lastLoginRewardDate;} public void setLastLoginRewardDate(LocalDate value){lastLoginRewardDate=value; touch();}
+    public int getLoginRewardDay(){return loginRewardDay;} public void setLoginRewardDay(int value){loginRewardDay=value; touch();}
     public void setRole(String role){this.role=role; touch();} public void setBlocked(boolean blocked){this.blocked=blocked; touch();}
     public void setPasswordHash(String value){passwordHash=value; touch();} public void setBalance(long value){balance=value; touch();}
     public void setPoints(long value){points=value; this.level=Math.max(1,(int)(points/100)+1); touch();}

@@ -86,7 +86,8 @@ export function Landing() {
           </div>
         </div>
         <div className="hero-art">
-          <img src="/assets/balloon-green.png" alt="Воздушный шар" />
+          <img className="landing-balloon-green" src="/assets/balloon-green.png" alt="Зелёный воздушный шар" />
+          <img className="landing-balloon-red" src="/assets/balloon-red.png" alt="Красный воздушный шар" />
         </div>
       </section>
 
@@ -113,8 +114,8 @@ export function Landing() {
         </div>
       </section>
 
+      <div className="landing-white-section">
       <section className="draw-banner">
-        <img src="/assets/lucky-box.png" alt="" width={72} height={72} />
         <div>
           <span className="eyebrow">ПРОВЕРЯЕТЕ ПРОЕКТ?</span>
           <h2>Мгновенный вход — баланс и полёт уже ждут</h2>
@@ -144,6 +145,7 @@ export function Landing() {
           <article><h3>Только бонусные баллы</h3><p className="muted">В игре нет реальных денег: ставка и выигрыш — бонусы платформы.</p></article>
         </div>
       </section>
+      </div>
     </div>
 
     <footer className="product-footer">

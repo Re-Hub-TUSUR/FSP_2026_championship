@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type LeaderRow, type Tournament } from '../../shared/api/client';
 import { useStore } from '../../store';
 import { RulesDialog } from './RulesDialog';
@@ -49,7 +49,7 @@ function TournamentDialog({ tournament, leaders, loading, error, onClose }: {
           {leaders.slice(0, 10).map((row, index) => <li key={row.id} className={index < 3 ? 'top' : ''}>
             {index < 3 ? <img src={`/assets/medal-${index + 1}.png`} alt={`${index + 1} место`} width={26} height={26} /> : <b className="num">#{index + 1}</b>}
             <span>{row.username}</span>
-            <strong className="num">{number(row.points)} ★</strong>
+            <strong className="num coin-value">{number(row.points)} <img src="/assets/coin.png" alt="" /></strong>
           </li>)}
         </ol>
         : <div className="empty"><b>Пока нет участников турнира</b></div>}
@@ -70,12 +70,33 @@ export function Play() {
   const [error, setError] = useState('');
   const [rulesOpen, setRulesOpen] = useState(false);
   const [tournamentOpen, setTournamentOpen] = useState(false);
+  const [rewardMessage, setRewardMessage] = useState('');
+  const [now, setNow] = useState(Date.now());
   const playDropSound = () => {
     const sound = new Audio('/assets/drop-click.mp3');
     sound.volume = 0.7;
     void sound.play().catch(() => {});
   };
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me });
+  const loginReward = useQuery({ queryKey: ['login-reward'], queryFn: api.loginReward });
+  const claimReward = useMutation({
+    mutationFn: api.claimLoginReward,
+    onSuccess: (state) => {
+      const message = state.awardedCoins ? `Получено ${state.awardedCoins} бонусов`
+        : state.awardedPuzzles ? `Получено фрагментов пазла: ${state.awardedPuzzles}`
+        : 'Получен лотерейный билет';
+      setRewardMessage(message);
+      client.setQueryData(['login-reward'], state);
+      void client.invalidateQueries({ queryKey: ['me'] });
+      void client.invalidateQueries({ queryKey: ['daily-bonus'] });
+      void client.invalidateQueries({ queryKey: ['lottery'] });
+    },
+    onError: (e) => setRewardMessage(e instanceof Error ? e.message : 'Не удалось получить награду')
+  });
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   const { data: config } = useQuery({ queryKey: ['config', theme], queryFn: () => api.config(theme) });
   const { data: red } = useQuery({ queryKey: ['config', 'RED'], queryFn: () => api.config('RED') });
   const { data: green } = useQuery({ queryKey: ['config', 'GREEN'], queryFn: () => api.config('GREEN') });
@@ -86,6 +107,9 @@ export function Play() {
   const selected = options.find((option) => option.id === bet);
   const balance = me?.balance ?? 0;
   const affordable = (amount: number) => amount <= balance;
+  const resetMs = loginReward.data?.nextResetAt ? new Date(loginReward.data.nextResetAt).getTime() - now : 0;
+  const resetHours = Math.floor(Math.max(0, resetMs) / 3_600_000);
+  const resetMinutes = Math.floor(Math.max(0, resetMs % 3_600_000) / 60_000);
 
   const chooseBet = (optionId: string, amount: number) => {
     if (!affordable(amount)) {
@@ -118,12 +142,19 @@ export function Play() {
 
   return <div className="play-layout design-play">
     <section className="weekly-bonus">
-      <h2>Ежедневный бонус</h2>
+      <h2>Ежедневный бонус {loginReward.data?.claimedToday && <small>Следующая награда через {resetHours} ч. {resetMinutes} мин. (МСК)</small>}</h2>
       <div className="bonus-days">
-        {['✓', '20', '30', '2', '40', '2', ''].map((reward, index) => <div className={`bonus-day ${index === 1 ? 'today' : ''}`} key={index}>
-          <b>День {index + 1}</b><span>{index === 6 ? <img className="surprise-icon" src="/assets/secret-box.png" alt="Сюрприз" /> : <>{reward}{index > 0 && index !== 3 && index !== 5 ? <img src="/assets/coin.png" alt="" /> : index === 3 || index === 5 ? <img src="/assets/puzzle-piece.png" alt="" /> : null}</>}</span>
-        </div>)}
+        {['10', '20', '30', '2', '40', '2', ''].map((reward, index) => {
+          const day = index + 1;
+          const available = Boolean(loginReward.data?.claimable && loginReward.data.currentDay === day);
+          const claimed = Boolean(loginReward.data?.claimedToday && loginReward.data.completedDay === day);
+          return <button className={`bonus-day ${available ? 'today' : ''} ${claimed ? 'claimed' : ''}`} key={day}
+            disabled={!available || claimReward.isPending} onClick={() => claimReward.mutate()}>
+            <b>День {day}</b><span>{claimed ? '✓' : index === 6 ? <img className="surprise-icon" src="/assets/secret-box.png" alt="Лотерейный билет" /> : <>{reward}{index === 3 || index === 5 ? <img src="/assets/puzzle-piece.png" alt="фрагмента пазла" /> : <img src="/assets/coin.png" alt="бонусов" />}</>}</span>
+          </button>;
+        })}
       </div>
+      {rewardMessage && <div className="daily-reward-message" role="status">{rewardMessage}</div>}
     </section>
 
     <section className="setup-card">
@@ -195,7 +226,7 @@ export function Play() {
 
       <div className="start-row">
         <div className="selection-summary">
-          {selected ? <><span className="eyebrow">ВЫБРАНО</span><b className="num">{selected.amount} ★</b></> : <span className="muted">Ставка не выбрана</span>}
+          {selected ? <><span className="eyebrow">ВЫБРАНО</span><b className="num coin-value">{selected.amount} <img src="/assets/coin.png" alt="" /></b></> : <span className="muted">Ставка не выбрана</span>}
           {error && <div className="form-error">{error}</div>}
         </div>
         <button className="primary" disabled={!bet || busy} onClick={start}>

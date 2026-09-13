@@ -28,7 +28,8 @@ public final class Models {
   public static final int FIRST_BOOSTER_LEVEL = MIN_CASHOUT_LEVEL + 1;
 
   public enum Theme { RED, GREEN }
-  public enum RoundState { CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED }
+  /** REFUNDED — полёт прерван перезапуском сервера до cashout: раунд отменён, ставка возвращена игроку. */
+  public enum RoundState { CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED, REFUNDED }
 
   /** Награда за раунд: фрагмент пазла и состояние сегодняшнего лотерейного билета. */
   public record PuzzleAward(int fragment, int collected, int total, boolean completed, long bonus,
@@ -233,7 +234,7 @@ public final class Models {
     public final String seed, commitment;
     public final int popLevel, boosterLevel;
     public final double[] ladder;
-    public final Instant startedAt = Instant.now();
+    public final Instant startedAt;
 
     public volatile int level = 0;
     public volatile double multiplier = 1.0;
@@ -276,6 +277,13 @@ public final class Models {
 
     public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
                  String seed, String commitment, int popLevel, int boosterLevel, double[] ladder) {
+      this(id, userId, config, betAmount, boosterMultiplier, seed, commitment, popLevel, boosterLevel, ladder, Instant.now());
+    }
+
+    /** Раунд, восстановленный из базы, сохраняет время старта исходного раунда. */
+    public Round(String id, String userId, Config config, long betAmount, double boosterMultiplier,
+                 String seed, String commitment, int popLevel, int boosterLevel, double[] ladder, Instant startedAt) {
+      this.startedAt = startedAt;
       this.id = id;
       this.userId = userId;
       this.config = config;

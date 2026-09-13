@@ -7,10 +7,16 @@ import static com.example.balloon.domain.Models.MIN_CASHOUT_LEVEL;
 import com.example.balloon.auth.AccountService;
 import com.example.balloon.config.GameConfigEntity;
 import com.example.balloon.config.GameConfigRepository;
+import com.example.balloon.rounds.RoundEntity;
+import com.example.balloon.rounds.RoundStore;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,12 +28,14 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.Consumer;
 
 @Service
 public class GameService implements CommandLineRunner {
   private static final Logger log = LoggerFactory.getLogger(GameService.class);
   /** Длительность уровня: игрок должен успеть увидеть новый коэффициент и нажать «Забрать». */
   private static final long TICK_MS = 1500;
+  /** Сколько раундов держится в памяти для опроса экрана полёта; история целиком хранится в базе. */
   private static final int HISTORY_LIMIT = 200;
 
   private final Map<String, Round> rounds = new ConcurrentHashMap<>();
@@ -36,7 +44,8 @@ public class GameService implements CommandLineRunner {
    * Guarded by {@link #idempotencyLock} and retained as long as its round is
    * retained. A plain get/put pair could debit twice on concurrent retries;
    * a fixed-size LRU cache could evict an active round's key during a burst.
-   * Keys are therefore pruned together with evicted finished rounds.
+   * Keys are therefore pruned together with evicted finished rounds; after
+   * that the key is still found in the database together with its round.
    */
   private final Map<String, IdempotencyRecord> idempotent = new HashMap<>();
   private final Object idempotencyLock = new Object();
@@ -47,13 +56,22 @@ public class GameService implements CommandLineRunner {
   private final AccountService accounts;
   private final GameConfigRepository configRepository;
   private final ObjectMapper mapper;
+  private final RoundStore store;
+  private final TransactionTemplate transactions;
+  private final long tickMs;
 
   private record IdempotencyRecord(Round round, Theme theme, String betOption) {}
+  private record PayoutOutcome(long balanceAfter, AccountService.WinRecord win) {}
 
-  public GameService(AccountService accounts, GameConfigRepository configRepository, ObjectMapper mapper) {
+  public GameService(AccountService accounts, GameConfigRepository configRepository, ObjectMapper mapper,
+                     RoundStore store, PlatformTransactionManager transactionManager,
+                     @Value("${game.tick-ms:" + TICK_MS + "}") long tickMs) {
     this.accounts = accounts;
     this.configRepository = configRepository;
     this.mapper = mapper;
+    this.store = store;
+    this.transactions = new TransactionTemplate(transactionManager);
+    this.tickMs = tickMs;
     configs.put(Theme.RED, Config.defaults(Theme.RED));
     configs.put(Theme.GREEN, Config.defaults(Theme.GREEN));
     scheduler = Executors.newScheduledThreadPool(4, r -> {
@@ -63,9 +81,14 @@ public class GameService implements CommandLineRunner {
     });
   }
 
-  /** Поднимает опубликованные администратором настройки: без этого правки терялись бы при перезапуске. */
   @Override
   public void run(String... args) {
+    loadPublishedConfigs();
+    recoverUnsettledRounds();
+  }
+
+  /** Поднимает опубликованные администратором настройки: без этого правки терялись бы при перезапуске. */
+  private void loadPublishedConfigs() {
     for (GameConfigEntity entity : configRepository.findAll()) {
       try {
         Theme theme = Theme.valueOf(entity.getTheme());
@@ -93,6 +116,88 @@ public class GameService implements CommandLineRunner {
     }
   }
 
+  /**
+   * Подводит итоги раундов, прерванных перезапуском. Выигрыш, зафиксированный до остановки, остаётся
+   * за игроком: полёт доводится до точки взрыва по сиду раунда. Раунд без cashout отменяется с возвратом
+   * ставки — пока сервер был недоступен, игрок не мог забрать выигрыш.
+   */
+  private void recoverUnsettledRounds() {
+    List<Round> unsettled;
+    try {
+      unsettled = store.unsettled();
+    } catch (Exception e) {
+      log.error("Не удалось загрузить раунды с неподведёнными итогами: {}", e.getMessage(), e);
+      return;
+    }
+    for (Round round : unsettled) {
+      try {
+        synchronized (round) {
+          if (!round.flightOver) {
+            if (round.cashedOut()) finishInterruptedFlight(round);
+            else refund(round, "полёт прерван перезапуском сервера");
+          } else {
+            endFlight(round);
+          }
+        }
+        if (!round.settlementComplete) {
+          // Итоги не записались, например база ещё недоступна: такт повторит их, как для обычного раунда.
+          remember(round);
+          tickers.put(round.id, scheduler.scheduleAtFixedRate(() -> tick(round), tickMs, tickMs, TimeUnit.MILLISECONDS));
+        }
+        log.info("Раунд {} игрока {} после перезапуска: {}", round.id, round.userId, round.state);
+      } catch (Exception e) {
+        log.error("Не удалось подвести итоги раунда {} после перезапуска: {}", round.id, e.getMessage(), e);
+      }
+    }
+  }
+
+  /** Доводит полёт после cashout до точки взрыва: уровни, пропущенные за время перезапуска, приносят свои очки. */
+  private void finishInterruptedFlight(Round round) {
+    int finalLevel = Math.min(round.popLevel - 1, round.levels());
+    if (finalLevel > round.level) {
+      round.points = Math.addExact(round.points, Math.multiplyExact(finalLevel - round.level, round.config.pointsPerLevel()));
+      round.level = finalLevel;
+      round.multiplier = round.multiplierAt(finalLevel);
+    }
+    endFlight(round);
+  }
+
+  /** Отменяет раунд без cashout: ставка возвращается одной транзакцией с записью раунда и журналом. */
+  private void refund(Round round, String reason) {
+    Instant endedAt = Instant.now();
+    long balanceAfter = transactions.execute(status -> {
+      long balance = accounts.credit(round.userId, round.betAmount).getBalance();
+      store.update(round.id, entity -> entity.refund(balance, endedAt));
+      accounts.audit("system", "ROUND_REFUND",
+          round.userId + ": раунд " + round.id + " — " + reason + ", ставка " + round.betAmount + " возвращена");
+      return balance;
+    });
+    round.state = RoundState.REFUNDED;
+    round.payout = round.betAmount;
+    round.cashedOutMultiplier = null;
+    round.points = 0;
+    round.multiplier = 1.0;
+    round.balanceAfter = balanceAfter;
+    round.endedAt = endedAt;
+    round.flightOver = true;
+    round.pointsSettled = true;
+    round.rewardSettled = true;
+    round.winSettled = true;
+    round.settlementComplete = true;
+  }
+
+  /** Останавливает такты до закрытия базы: незавершённые раунды подводятся при следующем старте. */
+  @PreDestroy
+  public void shutdown() {
+    scheduler.shutdown();
+    try {
+      if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) scheduler.shutdownNow();
+    } catch (InterruptedException e) {
+      scheduler.shutdownNow();
+      Thread.currentThread().interrupt();
+    }
+  }
+
   public Config config(Theme theme) { return configs.get(theme); }
 
   /**
@@ -102,6 +207,10 @@ public class GameService implements CommandLineRunner {
   public long balance() { return accounts.byUsername("demo").getBalance(); }
 
   public Round start(String user, Theme theme, String betOption) {
+    return start(user, theme, betOption, null);
+  }
+
+  private Round start(String user, Theme theme, String betOption, String idempotencyKey) {
     Config config = Optional.ofNullable(config(theme)).orElseThrow(() -> new IllegalArgumentException("Неизвестная тема"));
     if (!config.active()) throw new IllegalStateException("Тема временно отключена администратором");
     int index = optionIndex(betOption, theme, config.bets().length);
@@ -115,24 +224,27 @@ public class GameService implements CommandLineRunner {
     int popLevel = popLevel(seed, id, config);
     int boosterLevel = pickBoosterLevel(config, booster);
     double[] ladder = config.ladderForBooster(booster);
-
-    long balanceAfterBet = accounts.debit(user, bet).getBalance();
     Round round = new Round(id, user, config, bet, booster,
         seed, commitment, popLevel, boosterLevel, ladder);
-    round.balanceAfter = balanceAfterBet;
+
+    // Ставка списывается в одной транзакции с записью раунда: в базе не бывает списанной ставки без раунда.
+    transactions.executeWithoutResult(status -> {
+      round.balanceAfter = accounts.debit(user, bet).getBalance();
+      store.insert(round, betOption, idempotencyKey);
+    });
 
     try {
       remember(round);
-      tickers.put(id, scheduler.scheduleAtFixedRate(() -> tick(round), TICK_MS, TICK_MS, TimeUnit.MILLISECONDS));
+      tickers.put(id, scheduler.scheduleAtFixedRate(() -> tick(round), tickMs, tickMs, TimeUnit.MILLISECONDS));
       return round;
     } catch (RuntimeException e) {
       // Do not leave a debited account behind if local round registration or
       // scheduler submission fails before the round can be played.
       rounds.remove(id, round);
       roundOrder.remove(id);
-      try { accounts.credit(user, bet); }
+      try { refund(round, "не удалось запустить полёт"); }
       catch (Exception compensationFailure) {
-        log.error("Не удалось компенсировать ставку {} для пользователя {} после ошибки старта", bet, user, compensationFailure);
+        log.error("Не удалось вернуть ставку {} пользователю {} после ошибки старта", bet, user, compensationFailure);
       }
       throw e;
     }
@@ -146,8 +258,6 @@ public class GameService implements CommandLineRunner {
     synchronized (idempotencyLock) {
       IdempotencyRecord previous = idempotent.get(mapKey);
       if (previous != null) {
-        // Do not return a stale object after the bounded round history evicts
-        // it.  A retry after eviction is a new operation.
         if (rounds.containsKey(previous.round().id)) {
           if (previous.theme() != theme || !Objects.equals(previous.betOption(), betOption)) {
             throw new IllegalArgumentException("Idempotency-Key уже использован для другого запроса");
@@ -156,7 +266,17 @@ public class GameService implements CommandLineRunner {
         }
         idempotent.remove(mapKey);
       }
-      Round round = start(user, theme, betOption);
+      // Ключ хранится вместе с раундом: повтор после вытеснения из памяти или перезапуска
+      // возвращает тот же раунд и не списывает ставку второй раз.
+      Optional<RoundStore.StoredStart> stored = store.findStart(user, normalizedKey);
+      if (stored.isPresent()) {
+        Round storedRound = stored.get().round();
+        if (storedRound.theme() != theme || !Objects.equals(stored.get().betOptionId(), betOption)) {
+          throw new IllegalArgumentException("Idempotency-Key уже использован для другого запроса");
+        }
+        return rounds.getOrDefault(storedRound.id, storedRound);
+      }
+      Round round = start(user, theme, betOption, normalizedKey);
       idempotent.put(mapKey, new IdempotencyRecord(round, theme, betOption));
       return round;
     }
@@ -164,8 +284,9 @@ public class GameService implements CommandLineRunner {
 
   public Round get(String id) {
     Round round = rounds.get(id);
-    if (round == null) throw new NoSuchElementException("Раунд не найден: " + id);
-    return round;
+    if (round != null) return round;
+    // Завершённые раунды вытесняются из памяти, но остаются в базе.
+    return store.find(id).orElseThrow(() -> new NoSuchElementException("Раунд не найден: " + id));
   }
 
   /** Returns a round only to its owner; mismatches are deliberately hidden as 404. */
@@ -189,7 +310,8 @@ public class GameService implements CommandLineRunner {
   private Round cashoutOwned(Round round) {
     synchronized (round) {
       if (round.cashedOut()) return round;
-      if (round.flightOver) throw new IllegalStateException("Раунд уже завершён");
+      // Летящий шар всегда в памяти: копия из базы — уже завершённый раунд или раунд, ждущий итогов после перезапуска.
+      if (round.flightOver || rounds.get(round.id) != round) throw new IllegalStateException("Раунд уже завершён");
       if (round.level < MIN_CASHOUT_LEVEL) throw new IllegalStateException("Забрать выигрыш можно со второго уровня: первый подъём проходит без риска");
       payout(round, RoundState.CASHED_OUT);
       return round;
@@ -200,20 +322,15 @@ public class GameService implements CommandLineRunner {
     return cashoutOwned(getOwned(id, username));
   }
 
-  public List<Round> history() {
-    return rounds.values().stream()
-        .filter(Round::finished)
-        .sorted(Comparator.comparing((Round r) -> r.startedAt).reversed())
-        .toList();
+  /** Завершённые раунды всех игроков из базы, новые первыми: общая лента и «Прошлые игры». */
+  public List<Round> history(int limit) {
+    return store.recentFinished(limit);
   }
 
-  /** Завершённые раунды одного игрока, новые первыми: для вкладки «Мои раунды». */
-  public List<Round> historyOf(String username) {
-    return history().stream().filter(round -> round.userId.equals(username)).toList();
+  /** Завершённые раунды одного игрока из базы, новые первыми: для вкладки «Мои раунды». */
+  public List<Round> historyOf(String username, int limit) {
+    return store.recentFinishedOf(username, limit);
   }
-
-  /** Live authoritative snapshot used by leaderboard polling. */
-  public List<Round> allRounds() { return List.copyOf(rounds.values()); }
 
   /** Применяет настройки администратора: сначала проверка допустимости, затем запись в базу и в память. */
   public Config updateConfig(Theme theme, Config request, String actor) {
@@ -399,39 +516,51 @@ public class GameService implements CommandLineRunner {
     return proof;
   }
 
-  private void tick(Round round) {
+  /** Один такт полёта. Виден тестам пакета: они двигают раунд по уровням без ожидания таймера. */
+  void tick(Round round) {
     synchronized (round) {
-      if (round.flightOver) {
-        // A failed final side effect is retried safely: endFlight has separate
-        // completion guards for points, reward and win registration.
-        if (!round.settlementComplete) endFlight(round);
-        else stopTicker(round.id);
-        return;
-      }
-      int next = round.level + 1;
+      try {
+        if (round.flightOver) {
+          // A failed final side effect is retried safely: every effect is
+          // committed together with its marker on the round row.
+          if (!round.settlementComplete) endFlight(round);
+          else stopTicker(round.id);
+          return;
+        }
+        if (round.level >= round.levels()) {
+          // Шар уже на вершине, но прошлое начисление не удалось: повторяем его, не поднимая уровень.
+          if (round.cashedOut()) endFlight(round);
+          else payout(round, RoundState.SETTLED);
+          return;
+        }
+        int next = round.level + 1;
 
-      if (next >= round.popLevel) {
-        // Шар лопнул. Если выигрыш уже забрали, он остаётся за игроком.
-        if (round.cashedOut()) endFlight(round);
-        else finish(round, RoundState.CRASHED);
-        return;
-      }
+        if (next >= round.popLevel) {
+          // Шар лопнул. Если выигрыш уже забрали, он остаётся за игроком.
+          if (round.cashedOut()) endFlight(round);
+          else finish(round, RoundState.CRASHED);
+          return;
+        }
 
-      round.level = next;
-      // Пересечение уровня всегда приносит базовые очки, даже если игрок
-      // уже сделал cashout: полёт продолжается до crash именно для этого
-      // сценария. Бустер после cashout намеренно не активируется.
-      round.points += round.config.pointsPerLevel();
-      if (!round.cashedOut() && next == round.boosterLevel && !round.boosterActivated) {
-        round.boosterActivated = true;
-        round.points += (int) Math.round(round.config.pointsBoosterBonus() * round.boosterMultiplier);
-      }
-      round.multiplier = round.multiplierAt(next);
+        round.level = next;
+        // Пересечение уровня всегда приносит базовые очки, даже если игрок
+        // уже сделал cashout: полёт продолжается до crash именно для этого
+        // сценария. Бустер после cashout намеренно не активируется.
+        round.points += round.config.pointsPerLevel();
+        if (!round.cashedOut() && next == round.boosterLevel && !round.boosterActivated) {
+          round.boosterActivated = true;
+          round.points += (int) Math.round(round.config.pointsBoosterBonus() * round.boosterMultiplier);
+        }
+        round.multiplier = round.multiplierAt(next);
 
-      // Шар долетел до вершины.
-      if (next >= round.levels()) {
-        if (round.cashedOut()) endFlight(round);
-        else payout(round, RoundState.SETTLED);
+        // Шар долетел до вершины.
+        if (next >= round.levels()) {
+          if (round.cashedOut()) endFlight(round);
+          else payout(round, RoundState.SETTLED);
+        }
+      } catch (RuntimeException e) {
+        // Периодическая задача, бросившая исключение, больше не запускается: без перехвата раунд завис бы до перезапуска.
+        log.error("Сбой такта раунда {}: {}", round.id, e.getMessage(), e);
       }
     }
   }
@@ -440,18 +569,27 @@ public class GameService implements CommandLineRunner {
     double settledMultiplier = round.multiplier;
     long settledPayout = Math.max(1, Math.round(round.betAmount * settledMultiplier));
     int settledPoints = Math.addExact(round.points, round.config.pointsCashoutBonus());
-    long balanceAfter = accounts.credit(round.userId, settledPayout).getBalance();
 
-    // Mark the in-memory state only after the server-side credit succeeds,
-    // so a failed transaction remains safely retryable.
+    // Выплата, счётчик выигрышей и запись раунда — одна транзакция: баланс игрока и раунд в базе
+    // не расходятся даже при падении сервера, а предложение «Закрепи успех» решено к экрану результата.
+    PayoutOutcome outcome = transactions.execute(status -> {
+      long balance = accounts.credit(round.userId, settledPayout).getBalance();
+      var win = accounts.registerWin(round.userId, settledPayout, round.config.minWinAmount(), LotteryService.OFFER_EVERY_WINS);
+      store.update(round.id, entity -> entity.recordPayout(state.name(), settledMultiplier, settledPayout, settledPoints,
+          balance, round.level, round.multiplier, round.boosterActivated, win.wins()));
+      return new PayoutOutcome(balance, win);
+    });
+
+    // Mark the in-memory state only after the transaction commits,
+    // so a failed payout remains safely retryable.
     round.cashedOutMultiplier = settledMultiplier;
     round.payout = settledPayout;
     round.points = settledPoints;
     round.state = state;
-    round.balanceAfter = balanceAfter;
-    // Выигрыш учитывается сразу при начислении, а не в конце полёта: к моменту, когда откроется экран
-    // результата, уже решено, положено ли за него предложение «Закрепи успех».
-    registerWin(round);
+    round.balanceAfter = outcome.balanceAfter();
+    round.winNumber = outcome.win().wins();
+    round.offerDue = outcome.win().offerDue();
+    round.winSettled = true;
     // Cashout только фиксирует выплату: полёт останавливается отдельно, когда шар лопнет.
     if (state != RoundState.CASHED_OUT) endFlight(round);
   }
@@ -468,22 +606,31 @@ public class GameService implements CommandLineRunner {
     // start request pruning old history.
     if (round.settlementComplete || round.settling) return;
     round.settling = true;
-    if (!round.flightOver) {
-      round.flightOver = true;
-      round.endedAt = Instant.now();
-    }
     try {
+      if (!round.flightOver) {
+        Instant endedAt = Instant.now();
+        // Конец полёта записывается до начислений: лента и история видят раунд сразу,
+        // а после перезапуска полёт не доигрывается второй раз.
+        store.update(round.id, entity -> entity.recordFlightEnd(round.state.name(), round.level, round.multiplier,
+            round.points, round.boosterActivated, endedAt));
+        round.flightOver = true;
+        round.endedAt = endedAt;
+      }
+
       // Level/cashout/booster points are settled once, after the flight has
       // actually ended. This also includes levels crossed after cashout.
-      // Each effect has its own completed marker so a transient database
-      // failure can be retried by the ticker without crediting anything twice.
+      // Each effect commits together with its marker on the round row, so a
+      // retry after a database failure or a restart never credits anything twice.
       if (!round.pointsSettled) {
         try {
-          accounts.addPoints(round.userId, round.points);
+          transactions.executeWithoutResult(status -> {
+            accounts.addPoints(round.userId, round.points);
+            store.update(round.id, RoundEntity::markPointsSettled);
+          });
           round.pointsSettled = true;
         } catch (Exception e) {
           log.error("Не удалось начислить очки раунда {} пользователю {}: {}", round.id, round.userId, e.getMessage(), e);
-          if (isTerminalSettlementFailure(e)) round.pointsSettled = true;
+          if (isTerminalSettlementFailure(e)) round.pointsSettled = markSettled(round, RoundEntity::markPointsSettled);
         }
       }
 
@@ -491,25 +638,32 @@ public class GameService implements CommandLineRunner {
       if (!round.rewardSettled) {
         try {
           // null is a valid result after today's ticket is already issued.
-          round.reward = accounts.awardPuzzleFragment(round.userId);
+          PuzzleAward reward = transactions.execute(status -> {
+            PuzzleAward award = accounts.awardPuzzleFragment(round.userId);
+            store.update(round.id, entity -> entity.recordReward(store.json(award)));
+            return award;
+          });
+          round.reward = reward;
           round.rewardSettled = true;
         } catch (Exception e) {
           log.warn("Не удалось выдать ежедневный фрагмент пазла для раунда {} пользователя {}: {}",
               round.id, round.userId, e.getMessage());
-          if (isTerminalSettlementFailure(e)) round.rewardSettled = true;
+          if (isTerminalSettlementFailure(e)) round.rewardSettled = markSettled(round, RoundEntity::markRewardSettled);
         }
       }
-
-      // Обычно выигрыш уже учтён при начислении выплаты; здесь — повтор после сбоя базы.
-      registerWin(round);
 
       try { round.balanceAfter = playerBalance(round); }
       catch (Exception e) {
         log.warn("Не удалось получить баланс после раунда {} пользователя {}: {}", round.id, round.userId, e.getMessage());
       }
-      round.settlementComplete = round.pointsSettled
-          && round.rewardSettled
-          && (round.payout == 0 || round.winSettled);
+      if (round.pointsSettled && round.rewardSettled && (round.payout == 0 || round.winSettled)) {
+        long balanceAfter = round.balanceAfter;
+        store.update(round.id, entity -> entity.completeSettlement(balanceAfter));
+        round.settlementComplete = true;
+      }
+    } catch (Exception e) {
+      // Запись в базу не удалась: следующий такт повторит завершение с того же места.
+      log.error("Не удалось сохранить итоги раунда {}: {}", round.id, e.getMessage(), e);
     } finally {
       // Keep `settling` set until all effects have been marked complete and
       // the ticker has been cancelled; prune observes both flags.
@@ -525,17 +679,14 @@ public class GameService implements CommandLineRunner {
     }
   }
 
-  /** Учитывает выигрыш раунда один раз; вместе со счётчиком решается, положено ли предложение «Закрепи успех». */
-  private void registerWin(Round round) {
-    if (round.payout <= 0 || round.winSettled) return;
+  /** Помечает начисление выполненным без самого начисления — для ошибок, которые повтор не исправит. */
+  private boolean markSettled(Round round, Consumer<RoundEntity> change) {
     try {
-      var win = accounts.registerWin(round.userId, round.payout, round.config.minWinAmount(), LotteryService.OFFER_EVERY_WINS);
-      round.winNumber = win.wins();
-      round.offerDue = win.offerDue();
-      round.winSettled = true;
+      store.update(round.id, change);
+      return true;
     } catch (Exception e) {
-      log.warn("Не удалось учесть выигрыш раунда {} пользователя {}: {}", round.id, round.userId, e.getMessage());
-      if (isTerminalSettlementFailure(e)) round.winSettled = true;
+      log.warn("Не удалось отметить итог раунда {}: {}", round.id, e.getMessage());
+      return false;
     }
   }
 
@@ -560,13 +711,13 @@ public class GameService implements CommandLineRunner {
   }
 
   /**
-   * Bounds completed history without ever deleting an active round or leaving
-   * its scheduled ticker orphaned.  If more than HISTORY_LIMIT rounds are
-   * simultaneously active, they are all retained until some complete.
+   * Bounds completed rounds kept in memory without ever deleting an active round
+   * or leaving its scheduled ticker orphaned.  If more than HISTORY_LIMIT rounds
+   * are simultaneously active, they are all retained until some complete.
    */
   private void pruneRetainedRounds() {
     // Never evict a live round merely because many players started at once:
-    // that would make its owner unable to cash out.  Finished history is
+    // that would make its owner unable to cash out.  Finished rounds are
     // pruned first; a burst of more than HISTORY_LIMIT active rounds is kept
     // temporarily and becomes prunable as flights end.
     while (rounds.size() > HISTORY_LIMIT) {
@@ -592,7 +743,7 @@ public class GameService implements CommandLineRunner {
     }
   }
 
-  /** Remove retry records only after their completed round leaves retention. */
+  /** Remove in-memory retry records once their completed round leaves retention. */
   private void forgetIdempotencyFor(String roundId) {
     synchronized (idempotencyLock) {
       idempotent.entrySet().removeIf(entry -> entry.getValue().round().id.equals(roundId));

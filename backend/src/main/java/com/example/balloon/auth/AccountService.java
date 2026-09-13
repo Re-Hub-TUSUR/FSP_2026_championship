@@ -5,14 +5,16 @@ import com.example.balloon.daily.DailyBonusService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
@@ -27,22 +29,30 @@ public class AccountService implements CommandLineRunner {
     @Deprecated public static final long PUZZLE_BONUS = 250;
     /** Fixed amount used by the authenticated demo top-up button. */
     public static final long TOPUP_AMOUNT = 500;
+    /** Сессия входа действует столько с последнего обращения. */
+    public static final Duration DEFAULT_SESSION_TTL = Duration.ofDays(30);
+    /** Срок продлевается не чаще раза в час: экран полёта опрашивает сервер дважды в секунду, запись на каждый запрос была бы лишней. */
+    static final Duration SESSION_TOUCH_INTERVAL = Duration.ofHours(1);
 
     private final AccountRepository accounts; private final AuditRepository audits; private final DailyBonusService dailyBonus; private final ZoneId topUpZoneId;
-    private final Map<String,String> sessions = new ConcurrentHashMap<>();
+    /** Сессии входа хранятся в базе и переживают перезапуск сервера; сам токен туда не попадает, только его SHA-256. */
+    private final SessionRepository sessions; private final Duration sessionTtl;
     private final SecureRandom random = new SecureRandom();
     @Autowired
-    public AccountService(AccountRepository accounts, AuditRepository audits, DailyBonusService dailyBonus,
-                          @Value("${daily-bonus.zone-id:Europe/Moscow}") String topUpZoneId){
-        this.accounts=accounts;this.audits=audits;this.dailyBonus=dailyBonus;this.topUpZoneId=ZoneId.of(topUpZoneId);
+    public AccountService(AccountRepository accounts, AuditRepository audits, DailyBonusService dailyBonus, SessionRepository sessions,
+                          @Value("${daily-bonus.zone-id:Europe/Moscow}") String topUpZoneId,
+                          @Value("${auth.session-ttl:P30D}") Duration sessionTtl){
+        if(sessionTtl==null||sessionTtl.isZero()||sessionTtl.isNegative()) throw new IllegalArgumentException("auth.session-ttl must be positive");
+        this.accounts=accounts;this.audits=audits;this.dailyBonus=dailyBonus;this.sessions=sessions;this.topUpZoneId=ZoneId.of(topUpZoneId);this.sessionTtl=sessionTtl;
     }
     /** Source-compatible constructor for lightweight unit tests and embedders. */
-    public AccountService(AccountRepository accounts, AuditRepository audits, DailyBonusService dailyBonus){
-        this(accounts, audits, dailyBonus, "Europe/Moscow");
+    public AccountService(AccountRepository accounts, AuditRepository audits, DailyBonusService dailyBonus, SessionRepository sessions){
+        this(accounts, audits, dailyBonus, sessions, "Europe/Moscow", DEFAULT_SESSION_TTL);
     }
     @Override @Transactional public void run(String... args){
         if(!accounts.existsByUsernameIgnoreCase("demo")) accounts.save(new AccountEntity("demo", hash("demo123"), "USER"));
         if(!accounts.existsByUsernameIgnoreCase("admin")) accounts.save(new AccountEntity("admin", hash("admin123"), "ADMIN"));
+        purgeExpiredSessions();
     }
     public AccountEntity register(String username,String password){
         username=clean(username); validatePassword(password);
@@ -53,26 +63,44 @@ public class AccountService implements CommandLineRunner {
         AccountEntity a=accounts.findByUsernameIgnoreCase(clean(username)).orElseThrow(()->new IllegalArgumentException("Invalid credentials"));
         if(a.isBlocked()) throw new IllegalStateException("Account is blocked");
         if(!verify(password,a.getPasswordHash())) throw new IllegalArgumentException("Invalid credentials");
-        String token=Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes(32)); sessions.put(token,a.getId()); return token;
+        String token=Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes(32));
+        // В базу попадает только SHA-256 токена: содержимое таблицы sessions не позволяет войти в аккаунт.
+        Instant now=Instant.now();
+        sessions.save(new SessionEntity(a.getId(),tokenHash(token),now,now.plus(sessionTtl)));
+        return token;
     }
     public void logout(String token){
         String normalized=tokenFromAuth(token);
-        if(normalized!=null)sessions.remove(normalized);
+        if(normalized!=null)sessions.deleteByTokenHash(tokenHash(normalized));
     }
     public AccountEntity current(String auth){
         String token=tokenFromAuth(auth);
         if(token==null) return null;
-        String id=sessions.get(token);
-        if(id==null) return null;
-        AccountEntity account=accounts.findById(id).orElse(null);
+        SessionEntity session=sessions.findByTokenHash(tokenHash(token)).orElse(null);
+        if(session==null) return null;
+        Instant now=Instant.now();
+        // Истёкший токен не принимается, а его запись удаляется сразу, не дожидаясь периодической очистки.
+        if(!session.getExpiresAt().isAfter(now)) {
+            sessions.deleteByTokenHash(session.getTokenHash());
+            return null;
+        }
+        AccountEntity account=accounts.findById(session.getAccountId()).orElse(null);
         // A token issued before an administrator blocked the account must not
         // remain usable.  Remove it eagerly so every subsequent request is
         // rejected, including requests racing with the block operation.
         if(account==null || account.isBlocked()) {
-            sessions.remove(token, id);
+            sessions.deleteByTokenHash(session.getTokenHash());
             return null;
         }
+        // Скользящий срок: активная сессия продлевается на полный срок от последнего обращения.
+        if(session.getLastUsedAt().isBefore(now.minus(SESSION_TOUCH_INTERVAL)))
+            sessions.touch(session.getId(),now,now.plus(sessionTtl));
         return account;
+    }
+    /** Удаляет истёкшие сессии при старте и раз в час; истёкший токен не принимается и до очистки. */
+    @Scheduled(initialDelayString="${auth.session-cleanup-ms:3600000}",fixedDelayString="${auth.session-cleanup-ms:3600000}")
+    public int purgeExpiredSessions(){
+        return sessions.deleteExpired(Instant.now());
     }
     public AccountEntity require(String auth){
         AccountEntity a=current(auth);
@@ -165,7 +193,8 @@ public class AccountService implements CommandLineRunner {
         return updated;
     }
     public AccountEntity byId(String id){return accounts.findById(id).orElseThrow(()->new NoSuchElementException("User not found"));}
-    @Transactional public AccountEntity setBlocked(String id,boolean blocked,String actor,String reason){AccountEntity a=byIdForUpdate(id);a.setBlocked(blocked);accounts.save(a);audit(actor,blocked?"USER_BLOCK":"USER_UNBLOCK",a.getUsername()+": "+reason);return a;}
+    /** Блокировка отзывает все сессии игрока: после разблокировки нужно войти заново. */
+    @Transactional public AccountEntity setBlocked(String id,boolean blocked,String actor,String reason){AccountEntity a=byIdForUpdate(id);a.setBlocked(blocked);accounts.save(a);if(blocked)sessions.deleteByAccountId(a.getId());audit(actor,blocked?"USER_BLOCK":"USER_UNBLOCK",a.getUsername()+": "+reason);return a;}
     @Transactional public AccountEntity setRole(String id,String role,String actor,String reason){if(!Set.of("USER","ADMIN").contains(role))throw new IllegalArgumentException("Role must be USER or ADMIN");AccountEntity a=byIdForUpdate(id);a.setRole(role);accounts.save(a);audit(actor,"ROLE_CHANGE",a.getUsername()+" -> "+role+": "+reason);return a;}
     @Transactional public AccountEntity adjust(String id,long balanceDelta,long pointsDelta,String actor,String reason){AccountEntity a=byIdForUpdate(id);a.setBalance(Math.max(0,a.getBalance()+balanceDelta));a.setPoints(Math.max(0,a.getPoints()+pointsDelta));accounts.save(a);audit(actor,"MANUAL_ADJUSTMENT",a.getUsername()+": "+reason+" [balance="+balanceDelta+", points="+pointsDelta+"]");return a;}
     public List<AuditEntity> audit(){return audits.findTop100ByOrderByCreatedAtDesc();}
@@ -178,6 +207,11 @@ public class AccountService implements CommandLineRunner {
         if(value.isEmpty()) return null;
         if(value.regionMatches(true,0,"Bearer ",0,7)) value=value.substring(7).trim();
         return value.isEmpty()?null:value;
+    }
+    /** SHA-256 токена в hex — единственное, что о токене знает база. У токена 256 бит случайности, поэтому соль не нужна. */
+    static String tokenHash(String token){
+        try{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8)));}
+        catch(NoSuchAlgorithmException e){throw new IllegalStateException(e);}
     }
     private AccountEntity byUsernameForUpdate(String username){return accounts.findByUsernameIgnoreCaseForUpdate(clean(username)).orElseThrow(()->new NoSuchElementException("User not found"));}
     private AccountEntity byIdForUpdate(String id){return accounts.findByIdForUpdate(id).orElseThrow(()->new NoSuchElementException("User not found"));}

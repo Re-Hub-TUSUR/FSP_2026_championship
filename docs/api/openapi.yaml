@@ -4,8 +4,8 @@ info:
   version: 1.1.0
   description: |
     REST-контракт фактической реализации проекта. Авторизация использует
-    непрозрачный bearer-токен сессии, который хранится в памяти backend; это
-    не JWT. Раунды и realtime-состояние также хранятся в памяти GameService.
+    непрозрачный bearer-токен сессии, SHA-256 которого хранится в базе backend; это
+    не JWT. Раунды, история, рейтинг и турнир тоже хранятся в базе и переживают перезапуск.
     PostgreSQL, Redis, WebSocket, Flyway и Springdoc в текущем коде не
     используются.
 servers:
@@ -204,8 +204,8 @@ paths:
   /rounds/history:
     get:
       tags: [rounds]
-      summary: Завершённые раунды в памяти текущего процесса
-      description: Публичный список всех игроков в обезличенной проекции (без seed, commitment, balance и reward). Отдаются только завершённые раунды; максимум 200 хранится в памяти GameService текущего процесса и теряется при перезапуске.
+      summary: Завершённые раунды всех игроков
+      description: Публичный список всех игроков в обезличенной проекции (без seed, commitment, balance и reward). Раунды читаются из базы, новые первыми, и переживают перезапуск сервера; раунды, отменённые перезапуском (REFUNDED), не показываются.
       parameters:
         - in: query
           name: limit
@@ -315,7 +315,7 @@ paths:
     get:
       tags: [rounds]
       summary: Завершённые раунды текущего игрока
-      description: Полная проекция собственных раундов (commitment, раскрытый seed, награда) для вкладки «Мои раунды» и проверки честности. Раунды хранятся в памяти текущего процесса.
+      description: Полная проекция собственных раундов (commitment, раскрытый seed, награда) для вкладки «Мои раунды» и проверки честности. Раунды хранятся в базе и переживают перезапуск; раунд, прерванный перезапуском до cashout, приходит в состоянии REFUNDED, а payout равен возвращённой ставке.
       security: [{ sessionBearer: [] }]
       parameters:
         - in: query
@@ -334,7 +334,7 @@ paths:
     get:
       tags: [player]
       summary: Текущий турнир и призовой фонд
-      description: Публичный снимок текущего 14-дневного турнира. После завершения при первом запросе сервис начисляет призы трём лидерам рейтинга.
+      description: Публичный снимок текущего 14-дневного турнира. Срок и факт выплаты хранятся в базе, поэтому перезапуск не начинает турнир заново. После завершения при первом запросе сервис один раз начисляет призы трём лидерам рейтинга.
       responses:
         '200':
           description: Состояние турнира
@@ -600,7 +600,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque-session
-      description: Случайный bearer-токен AccountService; токены не являются JWT и хранятся только в памяти.
+      description: Случайный bearer-токен AccountService (32 байта base64url); токены не являются JWT, в базе хранится только их SHA-256, сессия действует 30 дней с последнего обращения и переживает перезапуск сервера.
   parameters:
     ThemeQuery:
       in: query
@@ -641,7 +641,8 @@ components:
       enum: [RED, GREEN]
     RoundState:
       type: string
-      enum: [CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED]
+      description: REFUNDED — полёт прерван перезапуском сервера до cashout, раунд отменён, ставка возвращена (payout равен ставке).
+      enum: [CREATED, STARTED, CASHED_OUT, CRASHED, SETTLED, REFUNDED]
     RegisterRequest:
       type: object
       required: [username, password]

@@ -88,7 +88,7 @@ public class GameController {
   public List<Map<String, Object>> history(@RequestParam(defaultValue = "50") int limit) {
     // История по условию общая для всех игроков, но приватные поля (seed,
     // commitment, баланс и награда) не должны раскрываться в общей ленте.
-    return game.history().stream().limit(Math.max(1, Math.min(100, limit))).map(this::toHistoryMap).toList();
+    return game.history(Math.max(1, Math.min(100, limit))).stream().map(this::toHistoryMap).toList();
   }
 
   /** Завершённые раунды текущего игрока с наградой и commitment — для вкладки «Мои раунды» и проверки честности. */
@@ -97,8 +97,7 @@ public class GameController {
                                 @RequestHeader(value = "Authorization", required = false) String auth) {
     try {
       AccountEntity account = accounts.require(auth);
-      return ResponseEntity.ok(game.historyOf(account.getUsername()).stream()
-          .limit(Math.max(1, Math.min(100, limit)))
+      return ResponseEntity.ok(game.historyOf(account.getUsername(), Math.max(1, Math.min(100, limit))).stream()
           .map(this::toMap)
           .toList());
     } catch (SecurityException e) {
@@ -109,8 +108,7 @@ public class GameController {
   /** Компактная лента «Прошлые игры»: коэффициенты взрыва завершённых раундов всех игроков. */
   @GetMapping("/rounds/crashes")
   public List<Map<String, Object>> crashes(@RequestParam(defaultValue = "20") int limit) {
-    return game.history().stream()
-        .limit(Math.max(1, Math.min(50, limit)))
+    return game.history(Math.max(1, Math.min(50, limit))).stream()
         .map(round -> Map.<String, Object>of(
             "roundId", round.id,
             "theme", round.theme(),

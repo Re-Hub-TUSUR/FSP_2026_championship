@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { api, type LeaderRow, type Tournament } from '../../shared/api/client';
+import { api, isDemoMode, type LeaderRow, type Tournament } from '../../shared/api/client';
 
 const number = (value: number) => new Intl.NumberFormat('ru-RU').format(Math.round(value || 0)).replace(/ /g, ' ');
 const maskName = (name: string) => (name.length <= 3 ? '***' : `***${name.slice(3)}`);
@@ -56,14 +56,17 @@ export function Leaderboard() {
   const prizes = prizesOf(tournament);
   const currentName = me.data?.username;
 
+  // Демонстрационный состав подмешивается только в демо-режиме или когда рейтинг недоступен:
+  // иначе выдуманные игроки занимали бы места и призы настоящего турнира.
+  const showDemo = isDemoMode() || q.isError;
   const players = useMemo(() => {
-    const merged = [...(q.data || []), ...demoPlayers, ...fallbackPlayers]
+    const merged = [...(q.data || []), ...(showDemo ? [...demoPlayers, ...fallbackPlayers] : [])]
       .filter((row, index, list) => list.findIndex((candidate) => candidate.id === row.id || candidate.username === row.username) === index);
     if (me.data && !merged.some((row) => row.id === me.data?.id || row.username === me.data?.username)) {
       merged.push({ id: me.data.id || 'current-player', username: me.data.username, points: me.data.points || 0, level: me.data.level || 1, balance: me.data.balance, multiplier: 1, trend: 0, rounds: 0 });
     }
     return merged.sort((left, right) => right.points - left.points || left.username.localeCompare(right.username, 'ru'));
-  }, [q.data, me.data]);
+  }, [q.data, me.data, showDemo]);
 
   const isMe = (row: LeaderRow) => row.id === me.data?.id || row.username === currentName;
   const rankOf = (row: LeaderRow) => players.indexOf(row) + 1;

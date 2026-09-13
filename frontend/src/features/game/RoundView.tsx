@@ -45,7 +45,9 @@ export function RoundView() {
 
   const flightOver = Boolean(round?.flightOver);
   const cashedOut = Boolean(round?.cashedOut ?? round?.cashedOutMultiplier);
-  const won = (round?.payout || 0) > 0;
+  // Раунд, прерванный перезапуском сервера до cashout, отменяется с возвратом ставки — это не выигрыш.
+  const refunded = round?.state === 'REFUNDED';
+  const won = !refunded && (round?.payout || 0) > 0;
 
   useEffect(() => {
     if (!round || !flightOver || transitioning.current) return;
@@ -103,9 +105,10 @@ export function RoundView() {
   const boosterPosition = ((Math.max(1, round.boosterLevel ?? 1) - 1) / Math.max(1, levels - 1)) * 100;
   const boosterState = boosterFired ? 'active' : cashedOut || flightOver ? 'lost' : 'waiting';
 
-  const phase = flightOver ? (won ? 'celebrate' : 'crash') : cashedOut ? 'secured' : 'flying';
+  const phase = flightOver ? (refunded ? 'refunded' : won ? 'celebrate' : 'crash') : cashedOut ? 'secured' : 'flying';
   const status = phase === 'crash' ? 'ШАР ЛОПНУЛ'
     : phase === 'celebrate' ? 'РАУНД ЗАВЕРШЁН'
+    : phase === 'refunded' ? 'СТАВКА ВОЗВРАЩЕНА'
     : phase === 'secured' ? 'ВЫИГРЫШ ЗАФИКСИРОВАН'
     : 'ИДЁТ ИГРА';
 
@@ -130,12 +133,14 @@ export function RoundView() {
     ? `Выигрыш ${number(round.payout || 0)} очков зафиксирован по ×${fixedMultiplier.toFixed(2)}. Шар летит дальше${round.multiplier > fixedMultiplier ? ` — могли бы забрать больше: сейчас ×${round.multiplier.toFixed(2)}` : ''}`
     : phase === 'crash' ? `Шар лопнул на уровне ${round.popLevel ?? level + 1} из ${levels}. Ставка не возвращается`
     : phase === 'celebrate' ? `Шар дошёл до вершины — выплата ${number(round.payout || 0)} начислена автоматически`
+    : phase === 'refunded' ? 'Полёт прервался из-за перезапуска сервера — ставка вернулась на баланс'
     : level < MIN_CASHOUT_LEVEL ? 'Первый подъём проходит без риска — забрать выигрыш можно со второго уровня'
     : 'Нажмите кнопку, чтобы зафиксировать текущий выигрыш';
 
   const button = phase === 'secured' ? { label: 'Выигрыш забран', amount: round.payout || 0, disabled: true }
     : phase === 'crash' ? { label: 'Раунд завершён', amount: 0, disabled: true }
     : phase === 'celebrate' ? { label: 'Выплата начислена', amount: round.payout || 0, disabled: true }
+    : phase === 'refunded' ? { label: 'Ставка возвращена', amount: round.betAmount, disabled: true }
     : { label: 'Забрать выигрыш', amount: level < MIN_CASHOUT_LEVEL ? round.betAmount : potential, disabled: level < MIN_CASHOUT_LEVEL };
 
   const sceneStyle = { '--level': level, '--sky-y': skyY } as CSSProperties;

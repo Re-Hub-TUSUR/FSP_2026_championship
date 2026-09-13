@@ -51,7 +51,7 @@ export function Result() {
 
   // Персональное предложение запрашивается только после выигрышного раунда.
   useEffect(() => {
-    if (!round || round.state === 'STARTED' || !(round.payout && round.payout > 0)) return;
+    if (!round || round.state === 'STARTED' || round.state === 'REFUNDED' || !(round.payout && round.payout > 0)) return;
     if (sessionStorage.getItem(upsellKey(id))) return;
     let cancelled = false;
     api.lotteryOffer(id)
@@ -76,20 +76,24 @@ export function Result() {
 
   if (!round || round.state === 'STARTED') return <div className="card loading"><div className="spinner" />Завершаем раунд…</div>;
 
-  const won = (round.payout || 0) > 0;
+  // Раунд, прерванный перезапуском сервера до cashout, отменён: ставка вернулась на баланс целиком.
+  const refunded = round.state === 'REFUNDED';
+  const won = !refunded && (round.payout || 0) > 0;
   const profit = round.profit ?? (round.payout || 0) - round.betAmount;
   const reachedTop = round.state === 'SETTLED';
-  const potentialMax = round.potentialMax ?? 0;
+  const potentialMax = refunded ? 0 : round.potentialMax ?? 0;
   const missed = won && potentialMax > (round.payout || 0);
 
-  return <section className={`result-card ${won ? 'won' : 'lost'}`}>
-    <div className="result-icon">{won ? '✦' : '💥'}</div>
-    <span className="eyebrow">РАУНД ЗАВЕРШЁН</span>
-    <h1>{won ? 'Поздравляем!' : 'Шар лопнул'}</h1>
+  return <section className={`result-card ${won ? 'won' : refunded ? 'refunded' : 'lost'}`}>
+    <div className="result-icon">{refunded ? '↺' : won ? '✦' : '💥'}</div>
+    <span className="eyebrow">{refunded ? 'РАУНД ОТМЕНЁН' : 'РАУНД ЗАВЕРШЁН'}</span>
+    <h1>{refunded ? 'Ставка возвращена' : won ? 'Поздравляем!' : 'Шар лопнул'}</h1>
     <p className="result-lead">
-      {won
-        ? reachedTop ? 'Шар долетел до вершины — выигрыш начислен автоматически' : 'Вы вовремя зафиксировали свой выигрыш'
-        : `Шар лопнул на коэффициенте ×${(round.crashMultiplier ?? round.multiplier).toFixed(2)} — ставка сгорела`}
+      {refunded
+        ? 'Полёт прервался из-за перезапуска сервера — ставка вернулась на баланс'
+        : won
+          ? reachedTop ? 'Шар долетел до вершины — выигрыш начислен автоматически' : 'Вы вовремя зафиксировали свой выигрыш'
+          : `Шар лопнул на коэффициенте ×${(round.crashMultiplier ?? round.multiplier).toFixed(2)} — ставка сгорела`}
     </p>
 
     <div className="result-numbers">

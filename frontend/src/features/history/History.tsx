@@ -11,7 +11,9 @@ const formatTime = (value?: string) =>
   new Date(value || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const number = (value: number) => Math.round(value).toLocaleString('ru-RU').replace(/ /g, ' ');
 const profitOf = (round: Round) => round.profit ?? (round.payout || 0) - round.betAmount;
-const isWin = (round: Round) => (round.payout || 0) > 0;
+/** Раунд, прерванный перезапуском сервера до cashout: ставка возвращена, в статистике он не учитывается. */
+const isRefund = (round: Round) => round.state === 'REFUNDED';
+const isWin = (round: Round) => !isRefund(round) && (round.payout || 0) > 0;
 /** Выигрыш — коэффициент фиксации, проигрыш — коэффициент уровня, на котором шар лопнул. */
 const shownMultiplier = (round: Round) =>
   isWin(round) ? round.cashedOutMultiplier || round.multiplier : round.crashMultiplier ?? round.multiplier;
@@ -53,7 +55,7 @@ function FairnessDialog({ round, onClose }: { round: Round; onClose: () => void 
         : isError || !proof?.seed ? <div className="state-error">
           <span>!</span>
           <b>Не удалось получить доказательство</b>
-          <p className="muted">Проверка доступна владельцу раунда, пока сервер хранит раунд в истории.</p>
+          <p className="muted">Проверка доступна только владельцу раунда.</p>
         </div>
         : <>
           <div className={`fairness-verdict ${verdict}`}>
@@ -84,8 +86,10 @@ export function History() {
   const mineQuery = useQuery({ queryKey: ['history', 'mine'], queryFn: api.myHistory, refetchInterval: 5000, refetchIntervalInBackground: true });
   const allQuery = useQuery({ queryKey: ['history'], queryFn: api.history, refetchInterval: 5000, refetchIntervalInBackground: true, enabled: tab === 'all' });
 
-  const mine = mineQuery.data ?? [];
-  const mineIds = useMemo(() => new Set(mine.map((round) => round.roundId)), [mine]);
+  const ownRounds = mineQuery.data ?? [];
+  const mineIds = useMemo(() => new Set(ownRounds.map((round) => round.roundId)), [ownRounds]);
+  // Раунды, отменённые перезапуском сервера, видны в таблице, но не входят в сводку.
+  const mine = ownRounds.filter((round) => !isRefund(round));
   const source = tab === 'mine' ? mineQuery : allQuery;
   const rows = (source.data ?? []).filter((round) => theme === 'ALL' || round.theme === theme);
 
@@ -149,7 +153,9 @@ export function History() {
             </span>
             <span><b>{number(round.betAmount)} ★</b>{round.boosterMultiplier > 1 && <small className="history-booster">бустер ×{round.boosterMultiplier}</small>}</span>
             <span>ур. {round.level} <small className="muted">из {round.levels}</small></span>
-            <span className={`badge ${isWin(round) ? 'save' : 'lost'}`}>×{shownMultiplier(round).toFixed(2)} · {isWin(round) ? 'забрал' : 'краш'}</span>
+            {isRefund(round)
+              ? <span className="badge">ставка возвращена</span>
+              : <span className={`badge ${isWin(round) ? 'save' : 'lost'}`}>×{shownMultiplier(round).toFixed(2)} · {isWin(round) ? 'забрал' : 'краш'}</span>}
             <b className={profit >= 0 ? 'win' : 'crash'}>{profit >= 0 ? '+' : ''}{number(profit)} ★</b>
             <span className="history-points">+{round.points || 0}</span>
             <span>{round.reward

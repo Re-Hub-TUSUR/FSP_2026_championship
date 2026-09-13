@@ -140,6 +140,21 @@ public class AccountService implements CommandLineRunner {
         a.setLotteryTickets(a.getLotteryTickets()+tickets);
         return accounts.save(a);
     }
+    /**
+     * Стирание купленного билета: билет списывается, приз начисляется на баланс одной
+     * транзакцией под блокировкой строки, поэтому без билета приз получить нельзя.
+     */
+    @Transactional public AccountEntity scratchTicket(String username,long prize){
+        if(prize<0) throw new IllegalArgumentException("Prize must be positive");
+        AccountEntity a=byUsernameForUpdate(username);
+        if(a.isBlocked()) throw new SecurityException("Account is blocked");
+        if(a.getLotteryTickets()<1) throw new IllegalStateException("Нет билетов для стирания");
+        a.setLotteryTickets(a.getLotteryTickets()-1);
+        a.setBalance(Math.addExact(a.getBalance(),prize));
+        AccountEntity updated=accounts.save(a);
+        audit(username,"TICKET_SCRATCH","+"+prize+" бонусов");
+        return updated;
+    }
     public AccountEntity byId(String id){return accounts.findById(id).orElseThrow(()->new NoSuchElementException("User not found"));}
     @Transactional public AccountEntity setBlocked(String id,boolean blocked,String actor,String reason){AccountEntity a=byIdForUpdate(id);a.setBlocked(blocked);accounts.save(a);audit(actor,blocked?"USER_BLOCK":"USER_UNBLOCK",a.getUsername()+": "+reason);return a;}
     @Transactional public AccountEntity setRole(String id,String role,String actor,String reason){if(!Set.of("USER","ADMIN").contains(role))throw new IllegalArgumentException("Role must be USER or ADMIN");AccountEntity a=byIdForUpdate(id);a.setRole(role);accounts.save(a);audit(actor,"ROLE_CHANGE",a.getUsername()+" -> "+role+": "+reason);return a;}

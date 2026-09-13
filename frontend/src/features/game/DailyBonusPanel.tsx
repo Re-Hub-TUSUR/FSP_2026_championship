@@ -142,59 +142,81 @@ export function DailyBonusPanel({ token, profileState, compact = false }: DailyB
     }
   };
 
-  if (!token) return null;
-
-  if (compact) {
-    return <div className="daily-puzzle-popover-wrap" ref={popoverRef}>
-      <button type="button" className={`daily-puzzle-chip ${state?.eligible ? 'ready' : ''}`} onClick={() => setPopoverOpen((open) => !open)} aria-expanded={popoverOpen} aria-haspopup="dialog" aria-label="Открыть прогресс ежедневного пазла">
-        <span className="daily-puzzle-chip-icon">🧩</span>
-        <b>{state ? `${state.collected}/${state.total}` : '—/—'}</b>
-        <small>{state?.nextResetAt ? `${Math.max(0, Math.floor((new Date(state.nextResetAt).getTime() - now) / 3_600_000))}ч` : '—'}</small>
-        <span className="daily-puzzle-chip-chevron" aria-hidden="true">⌄</span>
-      </button>
-      {popoverOpen && <div className="daily-puzzle-popover" role="dialog" aria-label="Ежедневный пазл">
-        <div className="daily-puzzle-popover-head"><div><strong>🧩 Ежедневный пазл</strong><small>Собирайте фрагменты за каждый раунд</small></div><button type="button" className="daily-puzzle-close" onClick={() => setPopoverOpen(false)} aria-label="Закрыть">×</button></div>
-        <div className="daily-puzzle-popover-progress"><span>Прогресс: <b>{state ? `${state.collected} из ${state.total} фрагментов` : 'загрузка…'}</b></span><b>{progress}%</b></div>
-        <div className="daily-progress-track" role="progressbar" aria-label="Прогресс дневного пазла" aria-valuemin={0} aria-valuemax={state?.total ?? 6} aria-valuenow={state?.collected ?? 0}><span style={{ width: `${progress}%` }} /></div>
-        <div className="daily-puzzle-popover-meta"><span>⏱ Сброс через</span><b>{countdownLabel(state?.nextResetAt, now)}</b></div>
-        <div className="daily-puzzle-popover-reward"><span>🎟 Награда</span><b>Лотерейный билет Столото</b><small>{state?.ticketAvailable ? 'Билет уже готов — сотрите его ниже' : 'Соберите все фрагменты, чтобы открыть билет'}</small></div>
-        {showTicket ? <button type="button" className={`daily-ticket ${phase === 'scratching' ? 'scratching' : ''}`} onClick={scratch} disabled={!canScratch} aria-label="Стереть ежедневный лотерейный билет">
-          <img src="/assets/daily-ticket.png" alt="Лотерейный билет" /><span className="daily-ticket-copy"><b>{phase === 'scratching' ? 'Стираем…' : 'Билет получен'}</b><small>{phase === 'scratching' ? 'Проверяем выигрыш' : 'Нажмите, чтобы стереть'}</small></span><span className="daily-scratch-cover" aria-hidden="true"><i>СТЕРЕТЬ</i></span>
-        </button> : reward != null ? <div className="daily-ticket daily-ticket-result" aria-live="polite"><img src="/assets/bonus-coin.png" alt="Монетка бонусов" /><span className="daily-ticket-copy"><b>Ваш выигрыш</b><strong>{rewardLabel(reward)}</strong></span></div> : null}
-        {error && <small className="daily-bonus-error" role="alert">{error}</small>}
-        <a className="daily-puzzle-profile-link" href="/profile" onClick={() => setPopoverOpen(false)}>Перейти в профиль к пазлу <span aria-hidden="true">→</span></a>
-      </div>}
-    </div>;
-  }
-
-  return <section className={`daily-bonus-panel ${state?.eligible ? 'ready' : ''} ${phase !== 'idle' ? 'active' : ''}`} aria-label="Ежедневный бонус">
-    <div className="daily-bonus-heading">
-      <img src="/assets/daily-puzzle.png" alt="" className="daily-puzzle-icon" />
-      <span>
-        <small>ЕЖЕДНЕВНЫЙ ПАЗЛ</small>
-        <b>{state ? `${state.collected} / ${state.total}` : '—'}</b>
-      </span>
-      <strong className="daily-bonus-status">{status}</strong>
-    </div>
-    <div className="daily-progress-track" role="progressbar" aria-label="Прогресс дневного пазла" aria-valuemin={0} aria-valuemax={state?.total ?? 6} aria-valuenow={state?.collected ?? 0}>
-      <span style={{ width: `${progress}%` }} />
-    </div>
-
-    {showTicket ? <button type="button" className={`daily-ticket ${phase === 'scratching' ? 'scratching' : ''}`} onClick={scratch} disabled={!canScratch} aria-label="Стереть ежедневный лотерейный билет">
-      <img src="/assets/daily-ticket.png" alt="Лотерейный билет" />
+  // Защитный слой стирается анимацией, пока сервер уже зафиксировал награду; результат появляется после неё.
+  const ticket = showTicket
+    ? <button type="button" className={`daily-ticket ${phase === 'scratching' ? 'scratching' : ''}`} onClick={scratch} disabled={!canScratch} aria-label="Стереть ежедневный лотерейный билет">
+      <img src="/assets/ticket.png" alt="" />
       <span className="daily-ticket-copy">
         <b>{phase === 'scratching' ? 'Стираем…' : 'Билет получен'}</b>
         <small>{phase === 'scratching' ? 'Проверяем выигрыш' : 'Нажмите, чтобы стереть'}</small>
       </span>
       <span className="daily-scratch-cover" aria-hidden="true"><i>СТЕРЕТЬ</i></span>
-    </button> : reward != null ? <div className="daily-ticket daily-ticket-result" aria-live="polite">
-      <img src="/assets/bonus-coin.png" alt="Монетка бонусов" />
-      <span className="daily-ticket-copy"><b>Ваш выигрыш</b><strong>{rewardLabel(reward)}</strong></span>
-    </div> : <div className="daily-bonus-hint">
-      <span>{state?.eligible ? 'Билет доступен' : `Ещё ${Math.max(0, (state?.total ?? 6) - (state?.collected ?? 0))} фрагм.`}</span>
-      <small>{resetLabel(state?.nextResetAt)}</small>
-    </div>}
+    </button>
+    : reward != null
+      ? <div className="daily-ticket daily-ticket-result" aria-live="polite">
+        <img src="/assets/coin.png" alt="" />
+        <span className="daily-ticket-copy"><b>Ваш выигрыш</b><strong>{rewardLabel(reward)}</strong></span>
+      </div>
+      : null;
 
-    {error && <small className="daily-bonus-error" role="alert">{error}</small>}
+  if (!token) return null;
+
+  if (compact) {
+    return <div className="daily-popover-wrap" ref={popoverRef}>
+      <button type="button" className={`puzzle-chip ${state?.eligible ? 'ready' : ''}`} onClick={() => setPopoverOpen((open) => !open)} aria-expanded={popoverOpen} aria-haspopup="dialog" aria-label="Открыть прогресс ежедневного пазла">
+        <img src="/assets/puzzle.png" alt="" width={20} height={20} />
+        <span><small>ПАЗЛ ДНЯ</small><b>{state ? `${state.collected} / ${state.total}` : '— / —'}</b></span>
+      </button>
+
+      {popoverOpen && <div className="daily-popover" role="dialog" aria-label="Ежедневный пазл">
+        <div className="modal-head">
+          <div><span className="eyebrow">ЕЖЕДНЕВНЫЙ ПАЗЛ</span><h3>Собирайте фрагменты за каждый раунд</h3></div>
+          <button type="button" className="modal-close" onClick={() => setPopoverOpen(false)} aria-label="Закрыть">×</button>
+        </div>
+
+        <div className="level-label">
+          <span>{state ? `${state.collected} из ${state.total} фрагментов` : 'загрузка…'}</span>
+          <b>{progress}%</b>
+        </div>
+        <div className="level-bar" role="progressbar" aria-label="Прогресс дневного пазла" aria-valuemin={0} aria-valuemax={state?.total ?? 6} aria-valuenow={state?.collected ?? 0}>
+          <i style={{ width: `${progress}%` }} />
+        </div>
+
+        <div className="level-label"><span>Сброс через</span><b className="num">{countdownLabel(state?.nextResetAt, now)}</b></div>
+
+        <div className="upsell-offer">
+          <img src="/assets/ticket.png" alt="" width={44} height={44} />
+          <div>
+            <b>Лотерейный билет Столото</b>
+            <small className="muted">{state?.ticketAvailable ? 'Билет готов — сотрите его ниже' : 'Соберите все фрагменты, чтобы открыть билет'}</small>
+          </div>
+        </div>
+
+        {ticket}
+
+        {error && <div className="form-error" role="alert">{error}</div>}
+        <a className="text-button" href="/profile" onClick={() => setPopoverOpen(false)}>Перейти в профиль к пазлу →</a>
+      </div>}
+    </div>;
+  }
+
+  return <section className="card" aria-label="Ежедневный бонус">
+    <div className="section-title">
+      <div>
+        <span className="eyebrow">ЕЖЕДНЕВНЫЙ ПАЗЛ</span>
+        <h2>{state ? `${state.collected} / ${state.total}` : '—'}</h2>
+      </div>
+      <span className="muted">{status}</span>
+    </div>
+
+    <div className="level-bar" role="progressbar" aria-label="Прогресс дневного пазла" aria-valuemin={0} aria-valuemax={state?.total ?? 6} aria-valuenow={state?.collected ?? 0}>
+      <i style={{ width: `${progress}%` }} />
+    </div>
+
+    {ticket ?? <p className="muted">
+      {state?.eligible ? 'Билет доступен' : `Ещё ${Math.max(0, (state?.total ?? 6) - (state?.collected ?? 0))} фрагментов`} · {resetLabel(state?.nextResetAt)}
+    </p>}
+
+    {error && <div className="form-error" role="alert">{error}</div>}
   </section>;
 }

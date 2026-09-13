@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { api, type LotteryOffer } from '../../shared/api/client';
 
 /**
- * «Закрепи успех» по п. 1.8: показывается один раз за сессию после выигрышного раунда
+ * «Закрепи успех» по п. 1.8: приходит на каждый 4-й выигрыш
  * и закрывается сам через popupTimeout секунд, если игрок не взаимодействует с окном.
  */
 export function UpsellDialog({ offer, roundId, onClose }: { offer: LotteryOffer; roundId: string; onClose: () => void }) {
@@ -19,6 +19,12 @@ export function UpsellDialog({ offer, roundId, onClose }: { offer: LotteryOffer;
     const timer = setTimeout(() => setSecondsLeft((value) => value - 1), 1000);
     return () => clearTimeout(timer);
   }, [secondsLeft, busy, done, onClose]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const accept = async () => {
     setBusy(true);
@@ -39,23 +45,31 @@ export function UpsellDialog({ offer, roundId, onClose }: { offer: LotteryOffer;
     <div className="modal-card upsell-card" role="dialog" aria-modal="true" aria-label="Закрепи успех" onClick={(event) => event.stopPropagation()}>
       <button className="modal-close" onClick={onClose} aria-label="Закрыть">×</button>
       <span className="eyebrow">ЗАКРЕПИ УСПЕХ</span>
+
       {done ? <>
         <h2>Билеты у вас!</h2>
         <p className="muted">{offer.tickets} лотерейных билетов начислено на счёт. Посмотреть их можно во вкладке «Лотерея».</p>
-        <button className="primary cta" onClick={onClose}>Отлично <span>→</span></button>
+        <img src="/assets/lucky-box.png" alt="" width={120} height={120} style={{ margin: '10px auto' }} />
+        <button className="primary" onClick={onClose}>Отлично <span aria-hidden="true">→</span></button>
       </> : <>
         <h2>Вы выиграли {offer.payout} ★</h2>
         <p className="muted">Закрепите результат: обменяйте часть выигрыша на лотерейные билеты со скидкой.</p>
+
         <div className="upsell-offer">
-          <span className="ticket-icon">🎟</span>
-          <div><b>{offer.tickets} билетов</b><small>вместо {offer.fullPrice} ★</small></div>
+          <img src="/assets/ticket.png" alt="" width={54} height={54} />
+          <div>
+            <b>{offer.tickets} билетов</b>
+            <small className="muted">вместо <s>{offer.fullPrice} ★</s></small>
+          </div>
           <div className="upsell-price">{offer.price} ★</div>
         </div>
+
         {error && <div className="form-error">{error}</div>}
-        <button className="primary cta" disabled={busy} onClick={accept}>
-          {busy ? 'Покупаем…' : `Купить за ${offer.price} ★`} <span>→</span>
+
+        <button className={`primary ${busy ? 'is-loading' : ''}`} disabled={busy} onClick={accept} style={{ width: '100%', marginTop: 16 }}>
+          {busy ? 'Покупаем…' : `Купить за ${offer.price} ★`} <span aria-hidden="true">→</span>
         </button>
-        <button className="text-link upsell-skip" onClick={onClose}>Не сейчас · окно закроется через {secondsLeft} сек</button>
+        <button className="upsell-skip" onClick={onClose}>Не сейчас · окно закроется через {secondsLeft} с</button>
       </>}
     </div>
   </div>;

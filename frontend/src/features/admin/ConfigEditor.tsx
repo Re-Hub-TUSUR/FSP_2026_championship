@@ -39,7 +39,7 @@ export function ConfigEditor() {
   // Сообщения относятся к конкретной теме: при переключении их надо убрать.
   useEffect(() => { setError(''); setSaved(''); }, [theme]);
 
-  if (isLoading || !draft) return <div className="card loading"><div className="spinner" />Загрузка настроек…</div>;
+  if (isLoading || !draft) return <div className="card"><div className="spinner" />Загрузка настроек…</div>;
 
   const patch = (values: Partial<GameConfig>) => { setDraft({ ...draft, ...values }); setSaved(''); };
 
@@ -116,14 +116,14 @@ export function ConfigEditor() {
     }
   };
 
-  return <div className="card admin-card config-editor">
+  return <div className="card">
     <div className="tabs">
       <button className={theme === 'RED' ? 'active' : ''} onClick={() => setTheme('RED')}>🔴 Красная тема</button>
       <button className={theme === 'GREEN' ? 'active' : ''} onClick={() => setTheme('GREEN')}>🟢 Зелёная тема</button>
       <span className="config-version">версия {draft.version ?? 1} · лестница: {manualLadder ? 'вручную' : 'по формуле'}</span>
     </div>
 
-    <h3 className="config-group">Базовые параметры</h3>
+    <h3 className="admin-group">Базовые параметры</h3>
     <div className="admin-fields">
       <label>Идентификатор игры<input value={draft.gameId} onChange={(e) => patch({ gameId: e.target.value })} /></label>
       <label>Название<input value={draft.gameName || ''} onChange={(e) => patch({ gameName: e.target.value })} /></label>
@@ -139,7 +139,7 @@ export function ConfigEditor() {
       </label>
     </div>
 
-    <h3 className="config-group">Математическая модель</h3>
+    <h3 className="admin-group">Математическая модель</h3>
     <div className="admin-fields">
       <label>Количество уровней <small>3…30</small>
         <input type="number" min={3} max={30} value={draft.levels} onChange={(e) => changeLevels(+e.target.value)} />
@@ -159,7 +159,7 @@ export function ConfigEditor() {
       <label>Максимальный коэффициент<input readOnly value={`×${(ladder[draft.levels - 1] ?? 0).toFixed(2)}`} /></label>
     </div>
 
-    <h3 className="config-group">Ставки и множители бустеров</h3>
+    <h3 className="admin-group">Ставки и множители бустеров</h3>
     <div className="bet-editor">
       {draft.betOptions.map((option, index) => <div key={option.id} className="bet-editor-row">
         <span>Тир {index + 1}</span>
@@ -168,14 +168,14 @@ export function ConfigEditor() {
       </div>)}
     </div>
 
-    <h3 className="config-group">Начисление очков</h3>
+    <h3 className="admin-group">Начисление очков</h3>
     <div className="admin-fields">
       <label>Очки за уровень<input type="number" min={0} value={draft.pointsPerLevel} onChange={(e) => patch({ pointsPerLevel: +e.target.value })} /></label>
       <label>Бонус за cashout<input type="number" min={0} value={draft.pointsCashoutBonus ?? 0} onChange={(e) => patch({ pointsCashoutBonus: +e.target.value })} /></label>
       <label>Бонус за бустер<input type="number" min={0} value={draft.pointsBoosterBonus ?? 0} onChange={(e) => patch({ pointsBoosterBonus: +e.target.value })} /></label>
     </div>
 
-    <h3 className="config-group">Апсейл «Закрепи успех»</h3>
+    <h3 className="admin-group">Апсейл «Закрепи успех»</h3>
     <div className="admin-fields">
       <label>Минимальный выигрыш для предложения <small>MIN_WIN_AMOUNT</small>
         <input type="number" min={0} value={draft.minWinAmount ?? 50} onChange={(e) => patch({ minWinAmount: +e.target.value })} />
@@ -185,15 +185,15 @@ export function ConfigEditor() {
       </label>
     </div>
 
-    <h3 className="config-group">
+    <h3 className="admin-group">
       Уровни: коэффициенты и положение бустера
       <label className="config-switch inline">
         <input type="checkbox" checked={manualLadder} onChange={(e) => toggleManual(e.target.checked)} />
         задать коэффициенты вручную
       </label>
     </h3>
-    <div className="table level-editor">
-      <div className="row table-head"><span>Уровень</span><span>Коэффициент</span><span>Шанс взрыва</span><span>Шанс бустера</span><span>Возврат</span></div>
+    <div className="table admin-preview-table">
+      <div className="table-head"><span>Уровень</span><span>Коэффициент</span><span>Шанс взрыва</span><span>Шанс бустера</span><span>Возврат</span></div>
       {ladder.map((multiplier, index) => {
         const expected = survival[index] * multiplier;
         return <div className="row" key={index}>
@@ -217,8 +217,8 @@ export function ConfigEditor() {
     {error && <div className="form-error">{error}</div>}
     {saved && <div className="form-success">{saved}</div>}
     <div className="config-actions">
-      <button className="primary cta" disabled={busy} onClick={save}>{busy ? 'Сохраняем…' : 'Опубликовать конфигурацию'} <span>→</span></button>
-      <button className="ghost-button" disabled={busy} onClick={reset}>Сбросить тему к значениям по умолчанию</button>
+      <button className="primary" disabled={busy} onClick={save}>{busy ? 'Сохраняем…' : 'Опубликовать конфигурацию'} <span>→</span></button>
+      <button className="ghost" disabled={busy} onClick={reset}>Сбросить тему к значениям по умолчанию</button>
     </div>
   </div>;
 }

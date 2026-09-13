@@ -38,6 +38,8 @@ public class LotteryController {
       body.put("balance", account.getBalance());
       body.put("ticketPrice", LotteryService.TICKET_PRICE);
       body.put("packs", lottery.packs());
+      body.put("scratchPrizes", LotteryService.SCRATCH_PRIZES);
+      body.put("scratchExpected", Math.round(LotteryService.expectedScratchPrize() * 100.0) / 100.0);
       return ResponseEntity.ok(body);
     } catch (SecurityException e) {
       return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
@@ -53,6 +55,21 @@ public class LotteryController {
       return ResponseEntity.ok(Map.of("tickets", updated.getLotteryTickets(), "balance", updated.getBalance()));
     } catch (SecurityException e) {
       return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+    } catch (Exception e) {
+      return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+    }
+  }
+
+  /** Стирание купленного билета: приз определяется и начисляется сервером. */
+  @PostMapping("/scratch")
+  public ResponseEntity<?> scratch(@RequestHeader(value = "Authorization", required = false) String auth) {
+    try {
+      AccountEntity account = accounts.require(auth);
+      return ResponseEntity.ok(lottery.scratch(account.getUsername()));
+    } catch (SecurityException e) {
+      return ResponseEntity.status(401).body(Map.of("error", e.getMessage()));
+    } catch (IllegalStateException e) {
+      return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
     } catch (Exception e) {
       return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
     }

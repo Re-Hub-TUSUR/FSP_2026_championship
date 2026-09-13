@@ -24,7 +24,8 @@ import java.util.concurrent.*;
 @Service
 public class GameService implements CommandLineRunner {
   private static final Logger log = LoggerFactory.getLogger(GameService.class);
-  private static final long TICK_MS = 1000;
+  /** Длительность уровня: игрок должен успеть увидеть новый коэффициент и нажать «Забрать». */
+  private static final long TICK_MS = 1500;
   private static final int HISTORY_LIMIT = 200;
 
   private final Map<String, Round> rounds = new ConcurrentHashMap<>();
@@ -76,6 +77,12 @@ public class GameService implements CommandLineRunner {
           log.warn("Игнорируется конфигурация {} с {} уровнями: для темы требуется {}",
               theme, loaded.levels(), requiredLevels);
           continue;
+        }
+        if (loaded.usesLegacyDefaultMath()) {
+          // Шансы темы ни разу не настраивались: переводим её на мягкий старт текущей версии.
+          loaded = loaded.withDefaultMath();
+          persist(loaded, "system");
+          log.info("Тема {}: шансы первой версии обновлены до текущих значений по умолчанию", theme);
         }
         configs.put(theme, loaded);
       } catch (Exception ignored) {
@@ -196,6 +203,11 @@ public class GameService implements CommandLineRunner {
         .filter(Round::finished)
         .sorted(Comparator.comparing((Round r) -> r.startedAt).reversed())
         .toList();
+  }
+
+  /** Завершённые раунды одного игрока, новые первыми: для вкладки «Мои раунды». */
+  public List<Round> historyOf(String username) {
+    return history().stream().filter(round -> round.userId.equals(username)).toList();
   }
 
   /** Live authoritative snapshot used by leaderboard polling. */

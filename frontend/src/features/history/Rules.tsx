@@ -1,24 +1,90 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
+const steps = [
+  { n: '01', title: 'Выберите шар', text: 'Красный — 12 уровней и максимальный множитель, зелёный — 9 уровней и плавный подъём.' },
+  { n: '02', title: 'Поставьте бонусы', text: 'Номинал ставки задаёт и уровень бустера: чем он выше, тем реже выпадает.' },
+  { n: '03', title: 'Заберите вовремя', text: 'Фиксируйте выигрыш до взрыва. После фиксации шар летит дальше — видно, сколько вы могли бы взять.' }
+];
+
 const entities = [
-  { icon: '⛃', name: 'Бонусы', role: 'Валюта ставки и выигрыша', how: 'Старт (500), сбор пазлов, победа в раунде' },
-  { icon: '⚡', name: 'Очки', role: 'Продвижение в Турнире', how: 'Начисляются за каждый пройденный уровень' },
-  { icon: '🧩', name: 'Пазлы', role: 'Коллекция наград', how: '1 фрагмент за раунд (собери 6 шт. → получи +250 бонусов)' }
+  { name: 'Бонусы', role: 'Валюта ставки и выигрыша', how: 'Старт (500), сбор пазлов, победа в раунде' },
+  { name: 'Очки', role: 'Продвижение в турнире', how: 'Начисляются за каждый пройденный уровень' },
+  { name: 'Пазлы', role: 'Коллекция наград', how: '1 фрагмент за раунд, 6 фрагментов → лотерейный билет' }
 ];
+
 const mechanics = [
-  { icon: '🚀', title: 'Полёт и Cashout', summary: 'Забрать можно с 1-го уровня.', detail: 'После нажатия «Забрать» сумма фиксируется по формуле ставки и текущего коэффициента, но шар продолжает полёт до краша.' },
-  { icon: '🎁', title: 'Бустеры пазла', summary: 'Множитель ×2, ×3 или ×4 ждёт на случайной линии.', detail: 'Если шар преодолевает линию до Cashout, срабатывает формула: Итоговый множитель = Текущий × Бустер (×2, ×3 или ×4). Вы также получаете экстра-очки.' },
-  { icon: '💥', title: 'Взрыв (Crash)', summary: 'Шар может лопнуть на любой линии.', detail: 'Если шар лопнул до вывода, ставка сгорает, но заработанные за раунд турнирные очки остаются в общем зачёте.' },
-  { icon: '🛡️', title: 'Честность (Provably Fair)', summary: 'Результат раунда формирует сервер.', detail: 'Хеш SHA-256 генерируется до старта раунда и доступен для проверки в истории игр — точку взрыва нельзя изменить задним числом.' }
+  { title: 'Полёт и фиксация', summary: 'Забрать можно с первого уровня.', detail: 'После нажатия «Забрать» сумма фиксируется по ставке и текущему коэффициенту, но шар продолжает полёт до взрыва.' },
+  { title: 'Бустеры пазла', summary: 'Множитель ×2, ×3 или ×4 ждёт на случайном уровне начиная со второго.', detail: 'Если шар преодолевает уровень бустера до фиксации, итоговый множитель умножается. Возврат игроку при этом одинаков для всех номиналов.' },
+  { title: 'Взрыв', summary: 'Шар может лопнуть на любом уровне.', detail: 'Если шар лопнул до фиксации, ставка сгорает, но заработанные за раунд турнирные очки остаются в общем зачёте.' },
+  { title: 'Честность раунда', summary: 'Точка взрыва определяется до старта.', detail: 'Хеш SHA-256 публикуется до начала раунда и доступен для проверки в истории игр — результат нельзя изменить задним числом.' }
 ];
+
 export function Rules() {
   const [active, setActive] = useState<number | null>(null);
-  return <section className="rules-guide">
-    <header className="rules-guide-head"><div><span className="eyebrow">ВСЁ ПРОСТО</span><h1>Как играть</h1><p>Разберитесь в экономике, риске и наградах за одну минуту.</p></div><div className="rules-guide-hint">💡 <span>Ставьте бонусы, набирайте очки<br/>и забирайте выигрыш вовремя.</span></div></header>
-    <section className="rules-block"><div className="rules-block-title"><span>ШАГ 1</span><h2>Выберите свой шар</h2></div><div className="rules-balloons"><article className="rules-balloon red"><img src="/art/balloon-red.svg" alt="Красный шар"/><div><h3>🔴 Красный шар</h3><p>12 уровней высоты</p><p>Высокий риск краха</p><p>Максимальный множитель</p></div></article><article className="rules-balloon green"><img src="/art/balloon-green.svg" alt="Зелёный шар"/><div><h3>🟢 Зелёный шар</h3><p>9 уровней высоты</p><p>Плавный рост коэффициента</p><p>Для аккуратной стратегии</p></div></article></div></section>
-    <section className="rules-block"><div className="rules-block-title"><span>ШАГ 2</span><h2>Три игровые сущности</h2><p>Не путайте валюту, рейтинг и коллекционные награды.</p></div><div className="entity-table"><div className="entity-row entity-head"><span>Сущность</span><span>Зачем нужна</span><span>Как получить</span></div>{entities.map((item) => <div className="entity-row" key={item.name}><strong><i>{item.icon}</i>{item.name}</strong><span>{item.role}</span><span>{item.how}</span></div>)}</div></section>
-    <section className="rules-block"><div className="rules-block-title"><span>ШАГ 3</span><h2>Механика полёта</h2><p>Нажмите на карточку, чтобы раскрыть подробности.</p></div><div className="mechanics-grid">{mechanics.map((item, index) => <button type="button" className={`mechanic-card ${active === index ? 'open' : ''}`} key={item.title} onClick={() => setActive(active === index ? null : index)}><span className="mechanic-icon">{item.icon}</span><span className="mechanic-copy"><strong>{item.title}</strong><span>{item.summary}</span>{active === index && <span className="mechanic-detail">{item.detail}</span>}</span><span className="mechanic-toggle">{active === index ? '−' : '+'}</span></button>)}</div></section>
-    <section className="economy-note"><div className="economy-icon">⛃</div><div><strong>Формула раунда</strong><p>Ставка × Текущий коэффициент</p></div></section><div className="rules-cta-wrap"><Link className="rules-cta" to="/play">🚀 Понятно, погнали играть!</Link></div>
-  </section>;
+
+  return <div className="play-layout">
+    <section className="rules-layout">
+      <div>
+        <span className="eyebrow">ВСЁ ПРОСТО</span>
+        <h1>Как играть</h1>
+        <p className="muted">Разберитесь в экономике, риске и наградах за одну минуту.</p>
+        <div className="rules-steps">
+          {steps.map((step) => <div key={step.n}>
+            <b>{step.n}</b>
+            <span><strong>{step.title}</strong><br /><small className="muted">{step.text}</small></span>
+          </div>)}
+        </div>
+      </div>
+
+      <div className="card rules-card">
+        <span className="eyebrow">ТРИ ИГРОВЫЕ СУЩНОСТИ</span>
+        <h2>Не путайте валюту, рейтинг и награды</h2>
+        {entities.map((item) => <article key={item.name}>
+          <h3>{item.name}</h3>
+          <p className="muted">{item.role} · {item.how}</p>
+        </article>)}
+      </div>
+    </section>
+
+    <section className="setup-card">
+      <div className="section-title">
+        <div><span className="eyebrow">МЕХАНИКА ПОЛЁТА</span><h2>Как устроен раунд</h2></div>
+        <span className="muted">Нажмите на карточку, чтобы раскрыть подробности</span>
+      </div>
+      <div className="theme-grid">
+        {mechanics.map((item, index) => <button
+          type="button"
+          key={item.title}
+          className={`theme-option ${active === index ? 'selected' : ''}`}
+          onClick={() => setActive(active === index ? null : index)}
+        >
+          <span>
+            <b>{item.title}</b>
+            <small className="muted">{active === index ? item.detail : item.summary}</small>
+          </span>
+        </button>)}
+      </div>
+    </section>
+
+    <section className="setup-card">
+      <div className="section-title">
+        <div><span className="eyebrow">ВЫБЕРИТЕ СВОЙ ШАР</span><h2>Две стратегии риска</h2></div>
+      </div>
+      <div className="theme-grid">
+        <div className="theme-option">
+          <img src="/assets/balloon-red.png" alt="Красный шар" />
+          <span><b>Красный шар</b><small className="muted">12 уровней · высокий риск · максимальный множитель</small></span>
+        </div>
+        <div className="theme-option">
+          <img src="/assets/balloon-green.png" alt="Зелёный шар" />
+          <span><b>Зелёный шар</b><small className="muted">9 уровней · плавный рост · для аккуратной стратегии</small></span>
+        </div>
+      </div>
+      <div className="start-row">
+        <span className="muted">Формула раунда: ставка × текущий коэффициент</span>
+        <Link className="primary" to="/play">Понятно, играем <span aria-hidden="true">→</span></Link>
+      </div>
+    </section>
+  </div>;
 }

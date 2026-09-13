@@ -3,13 +3,19 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type LotteryOffer } from '../../shared/api/client';
 import { PuzzleReward } from './PuzzleReward';
+import { DailyBonusPanel } from './DailyBonusPanel';
 import { UpsellDialog } from '../lottery/UpsellDialog';
 
-/** Частоту показа определяет сервер; в одной игровой сессии окно показывается не более одного раза. */
-const UPSELL_SESSION_KEY = 'balloon-upsell-shown';
+/**
+ * Частоту показа определяет сервер — предложение приходит на каждый 4-й выигрыш.
+ * Клиент лишь не повторяет окно для одного и того же раунда при возврате на экран.
+ */
+const upsellKey = (roundId: string) => `balloon-upsell-${roundId}`;
 
 /** Через столько секунд бездействия игрок возвращается к выбору ставки (п. 1.5 постановки). */
 const AUTO_RETURN_SECONDS = 10;
+
+const number = (value: number) => Math.round(value).toLocaleString('ru-RU').replace(/ /g, ' ');
 
 export function Result() {
   const { id = '' } = useParams();
@@ -43,15 +49,15 @@ export function Result() {
     };
   }, []);
 
-  // Персональное предложение запрашивается только после выигрышного раунда и один раз за сессию.
+  // Персональное предложение запрашивается только после выигрышного раунда.
   useEffect(() => {
     if (!round || round.state === 'STARTED' || !(round.payout && round.payout > 0)) return;
-    if (sessionStorage.getItem(UPSELL_SESSION_KEY)) return;
+    if (sessionStorage.getItem(upsellKey(id))) return;
     let cancelled = false;
     api.lotteryOffer(id)
       .then((offer) => {
         if (cancelled || !offer.eligible) return;
-        sessionStorage.setItem(UPSELL_SESSION_KEY, '1');
+        sessionStorage.setItem(upsellKey(id), '1');
         setUpsell(offer);
       })
       .catch(() => { /* предложение необязательно: молча пропускаем */ });
@@ -76,7 +82,7 @@ export function Result() {
   const potentialMax = round.potentialMax ?? 0;
   const missed = won && potentialMax > (round.payout || 0);
 
-  return <section className={`card result-card ${won ? 'won' : 'lost'}`}>
+  return <section className={`result-card ${won ? 'won' : 'lost'}`}>
     <div className="result-icon">{won ? '✦' : '💥'}</div>
     <span className="eyebrow">РАУНД ЗАВЕРШЁН</span>
     <h1>{won ? 'Поздравляем!' : 'Шар лопнул'}</h1>
@@ -85,24 +91,36 @@ export function Result() {
         ? reachedTop ? 'Шар долетел до вершины — выигрыш начислен автоматически' : 'Вы вовремя зафиксировали свой выигрыш'
         : `Шар лопнул на коэффициенте ×${(round.crashMultiplier ?? round.multiplier).toFixed(2)} — ставка сгорела`}
     </p>
+
     <div className="result-numbers">
       <div><small>КОЭФФИЦИЕНТ</small><b>{won ? `×${(round.cashedOutMultiplier || round.multiplier).toFixed(2)}` : '—'}</b></div>
-      <div><small>ВЫПЛАТА</small><b>{round.payout || 0} <i>★</i></b></div>
-      <div><small>ИТОГ РАУНДА</small><b className={profit >= 0 ? 'win' : 'crash'}>{profit >= 0 ? '+' : ''}{profit} <i>★</i></b></div>
+      <div><small>ВЫПЛАТА</small><b>{number(round.payout || 0)}</b></div>
+      <div><small>ИТОГ РАУНДА</small><b className={profit >= 0 ? 'win' : 'crash'}>{profit >= 0 ? '+' : ''}{number(profit)}</b></div>
       <div><small>ОЧКИ</small><b>{round.points || 0}</b></div>
     </div>
 
     {round.reward && <PuzzleReward reward={round.reward} />}
-    {round.reward?.ticketEligible && <p className="daily-ticket-earned">Ежедневный билет доступен в шапке — сотрите его и узнайте награду.</p>}
+    {round.reward?.ticketEligible && <DailyBonusPanel token={localStorage.getItem('balloon-token')} />}
 
     {potentialMax > 0 && <p className={`result-potential ${missed ? 'missed' : ''}`}>
-      Могли выиграть: <b>{potentialMax} ★</b> — шар лопнул на уровне {round.popLevel ?? round.level + 1} из {round.levels}
+      Могли выиграть: <b>{number(potentialMax)} ★</b> — шар лопнул на уровне {round.popLevel ?? round.level + 1} из {round.levels}
     </p>}
 
-    <p className="muted result-balance">Баланс после раунда: <b>{round.balanceAfter ?? round.balance ?? 0} ★</b></p>
-    <Link className="primary cta" to="/play">Играть снова <span>→</span></Link>
-    <Link className="text-link" to="/history">Посмотреть историю</Link>
-    {autoReturn && !upsell && <small className="auto-return">Возврат к выбору ставки через {secondsLeft} сек</small>}
+    <div className="result-balance">
+      <span className="muted">Баланс после раунда</span>
+      <b className="num">{number(round.balanceAfter ?? round.balance ?? 0)} ★</b>
+    </div>
+
+    <div className="start-row">
+      <Link className="text-button" to="/history">Посмотреть историю</Link>
+      <Link className="primary" to="/play">Играть снова <span aria-hidden="true">→</span></Link>
+    </div>
+
+    {autoReturn && !upsell && <div className="auto-return">
+      Возврат к выбору ставки через {secondsLeft} с
+      <span><i style={{ width: `${(secondsLeft / AUTO_RETURN_SECONDS) * 100}%` }} /></span>
+    </div>}
+
     {upsell && <UpsellDialog offer={upsell} roundId={id} onClose={() => setUpsell(null)} />}
   </section>;
 }

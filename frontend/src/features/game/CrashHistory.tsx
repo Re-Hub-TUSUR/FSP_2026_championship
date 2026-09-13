@@ -12,7 +12,7 @@ const tone = (row: CrashRow) => {
 };
 
 /** Лента «Прошлые игры»: коэффициенты, на которых лопнули шары в завершённых раундах всех игроков. */
-export function CrashHistory() {
+export function CrashHistory({ onDark = false }: { onDark?: boolean }) {
   const { data = [] } = useQuery({
     queryKey: ['crashes'],
     queryFn: api.crashes,
@@ -22,14 +22,14 @@ export function CrashHistory() {
 
   if (!data.length) return null;
 
-  return <div className="crash-history">
-    <span className="crash-history-title">Прошлые игры</span>
+  return <div className={`crash-history ${onDark ? 'on-dark' : ''}`}>
+    <span className="crash-history-title">ПРОШЛЫЕ ИГРЫ</span>
     <div className="crash-history-strip">
       {data.map((row) => <span
         key={row.roundId}
         className={`crash-chip ${tone(row)}`}
         title={row.survived ? 'Шар долетел до вершины' : `Шар лопнул на ×${row.crashMultiplier.toFixed(2)}`}
-      >{row.crashMultiplier.toFixed(2)}</span>)}
+      >×{row.crashMultiplier.toFixed(2)}</span>)}
     </div>
   </div>;
 }

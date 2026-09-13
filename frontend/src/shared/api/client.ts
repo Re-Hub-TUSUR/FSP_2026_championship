@@ -21,10 +21,13 @@ export interface DailyBonusState {
 }
 /** Апсейл «Закрепи успех»: каталог наборов и персональное предложение после раунда. */
 export interface TicketPack { id: string; tickets: number; price: number; label: string }
-export interface LotteryCatalog { tickets: number; balance: number; ticketPrice: number; packs: TicketPack[] }
+export interface ScratchPrize { amount: number; chance: number }
+export interface LotteryCatalog { tickets: number; balance: number; ticketPrice: number; packs: TicketPack[]; scratchPrizes?: ScratchPrize[]; scratchExpected?: number }
+export interface ScratchResult { prize: number; tickets: number; balance: number }
 export interface LotteryOffer { eligible: boolean; reason?: string; tickets: number; price: number; fullPrice: number; payout: number; timeoutSeconds: number }
 export interface LeaderRow { id: string; username: string; balance: number; rank?: number; level: number; points: number; multiplier: number; trend: number; rounds?: number; cashouts?: number; updatedAt?: string }
 export interface Tournament { startedAt: string; endsAt: string; active: boolean; firstPrize: number; secondPrize: number; thirdPrize: number; prizesPaid: boolean }
+export interface RoundProof { roundId: string; commitment: string; configVersion: number; seed?: string; popLevel?: number; boosterLevel?: number; ladder?: number[]; crashMultiplier?: number; formula?: string }
 export interface AdminUser { id: string; username: string; role: string; blocked: boolean; balance: number; points: number; level: number; createdAt?: string }
 export interface BetOption { id: string; amount: number; boosterMultiplier: number; boosterChance?: number; ladder?: number[] }
 export interface LevelRow { level: number; multiplier: number; popChance: number; boosterChance?: number; expectedReturn?: number }
@@ -58,7 +61,7 @@ const POINTS_PER_LEVEL = 10;
 const POINTS_CASHOUT_BONUS = 20;
 const POINTS_BOOSTER_BONUS = 15;
 const START_BALANCE = 1000;
-const LEVEL_DURATION_MS = 1000;
+const LEVEL_DURATION_MS = 1500;
 
 const roundsKey = 'balloon-demo-rounds';
 const balanceKey = 'balloon-demo-balance';
@@ -454,7 +457,7 @@ export const api = {
       const tierLadder = ladderForBooster(engine, option.boosterMultiplier);
       const round: DemoRound = {
         roundId: id, state: 'STARTED', theme, betAmount: option.amount, boosterMultiplier: option.boosterMultiplier,
-        boosterLevel: Math.random() < boosterAppearChance(option.boosterMultiplier) ? 1 + Math.floor(Math.random() * engine.levels) : 0,
+        boosterLevel: Math.random() < boosterAppearChance(option.boosterMultiplier) ? 2 + Math.floor(Math.random() * (engine.levels - 1)) : 0,
         boosterActivated: false, flightOver: false,
         levels: engine.levels, level: 0, multiplier: 1, nextMultiplier: tierLadder[1], ladder: tierLadder,
         potentialPayout: option.amount, payout: 0, points: 0, balance, balanceAfter: balance,
@@ -500,10 +503,17 @@ export const api = {
       }));
     }
   },
-  proof: async (id: string) => request<Record<string, unknown>>(`/rounds/${id}/proof`),
+  proof: async (id: string): Promise<RoundProof> => request<RoundProof>(`/rounds/${id}/proof`),
+  myHistory: async (): Promise<Round[]> => {
+    try { return await request<Round[]>('/rounds/mine?limit=50'); } catch (error) {
+      if (!isDemoMode()) throw error;
+      return api.history();
+    }
+  },
   // Лотерея работает только с авторизованным сервером: демо-режима у покупок нет.
   lottery: (): Promise<LotteryCatalog> => request<LotteryCatalog>('/lottery'),
   buyTickets: (packId: string) => request<{ tickets: number; balance: number }>('/lottery/buy', { method: 'POST', body: JSON.stringify({ packId }) }),
+  scratchTicket: () => request<ScratchResult>('/lottery/scratch', { method: 'POST' }),
   lotteryOffer: (roundId: string): Promise<LotteryOffer> => request<LotteryOffer>(`/lottery/offer/${roundId}`),
   acceptOffer: (roundId: string) => request<{ tickets: number; balance: number }>('/lottery/offer/accept', { method: 'POST', body: JSON.stringify({ roundId }) }),
   // У админских запросов нет демо-режима: ошибку сервера должен увидеть администратор, а не подмена локальными данными.

@@ -33,12 +33,17 @@ public final class Models {
                        double baseHazard, double hazardGrowth, double maxHazard, double rtp,
                        double[] ladderOverride, long minWinAmount, int popupTimeout, long version) {
 
+    /**
+     * Параметры по умолчанию. Старт мягкий: до первого уровня шар лопается в 7% (красный)
+     * и 5% (зелёный) раундов, поэтому почти в каждом раунде игрок успевает принять решение.
+     * Зелёный спокойнее красного на первых уровнях и в 2,5 раза чаще долетает до вершины.
+     */
     public static Config defaults(Theme theme) {
       int levels = theme == Theme.RED ? 12 : 9;
       return new Config(theme, "balloon", "Воздушный шар", "CRASH", true,
-          levels, new long[]{10, 20, 50, 100}, new double[]{1, 2, 3, 4}, uniformWeights(levels),
+          levels, new long[]{10, 20, 50, 100}, new double[]{1, 2, 3, 4}, defaultBoosterWeights(levels),
           10, 20, 15,
-          theme == Theme.RED ? 0.12 : 0.155, theme == Theme.RED ? 1.115 : 1.12, 0.60, 0.96,
+          theme == Theme.RED ? 0.07 : 0.05, theme == Theme.RED ? 1.20 : 1.35, 0.60, 0.96,
           new double[0], 50, 10, 1);
     }
 
@@ -46,6 +51,42 @@ public final class Models {
       double[] weights = new double[Math.max(1, levels)];
       Arrays.fill(weights, 1.0 / weights.length);
       return weights;
+    }
+
+    /**
+     * Бустер не выпадает на первом уровне: там коэффициент почти равен единице, и скидка
+     * на бустер упёрлась бы в минимальный шаг лестницы, завысив возврат игроку.
+     */
+    public static double[] defaultBoosterWeights(int levels) {
+      if (levels < 2) return uniformWeights(levels);
+      double[] weights = new double[levels];
+      Arrays.fill(weights, 1, levels, 1.0 / (levels - 1));
+      return weights;
+    }
+
+    /** Шансы первой версии: до первого уровня шар лопался в 12% (красный) и 15,5% (зелёный) раундов. */
+    private static final double[][] LEGACY_MATH = {{0.12, 1.115, 0.60}, {0.155, 1.12, 0.60}};
+
+    /** Сохранённая тема использует нетронутые шансы первой версии, а не настройки администратора. */
+    public boolean usesLegacyDefaultMath() {
+      double[] legacy = LEGACY_MATH[theme == Theme.RED ? 0 : 1];
+      return Math.abs(baseHazard - legacy[0]) < 1e-9
+          && Math.abs(hazardGrowth - legacy[1]) < 1e-9
+          && Math.abs(maxHazard - legacy[2]) < 1e-9;
+    }
+
+    /** Переводит шансы на текущие значения по умолчанию; ставки, бустеры, очки и прочие настройки сохраняются. */
+    public Config withDefaultMath() {
+      Config fresh = defaults(theme);
+      double[] probabilities = boosterProbabilities();
+      double[] uniform = uniformWeights(levels);
+      boolean untouchedWeights = true;
+      for (int i = 0; i < levels; i++) untouchedWeights &= Math.abs(probabilities[i] - uniform[i]) < 1e-9;
+      return new Config(theme, gameId, gameName, gameType, active, levels, bets, boosters,
+          untouchedWeights ? defaultBoosterWeights(levels) : boosterWeights,
+          pointsPerLevel, pointsCashoutBonus, pointsBoosterBonus,
+          fresh.baseHazard(), fresh.hazardGrowth(), fresh.maxHazard(), rtp,
+          ladderOverride, minWinAmount, popupTimeout, version + 1);
     }
 
     /** Шанс взрыва на уровне: давление в шаре растёт экспоненциально с каждым уровнем. */

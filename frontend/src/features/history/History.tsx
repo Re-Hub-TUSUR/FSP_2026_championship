@@ -1,17 +1,178 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, type Round } from '../../shared/api/client';
 
-const formatTime = (value?: string) => new Date(value || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+type Tab = 'mine' | 'all';
+type ThemeFilter = 'ALL' | 'RED' | 'GREEN';
+type Verdict = 'pending' | 'match' | 'mismatch' | 'unsupported';
+
+const formatTime = (value?: string) =>
+  new Date(value || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const number = (value: number) => Math.round(value).toLocaleString('ru-RU').replace(/ /g, ' ');
 const profitOf = (round: Round) => round.profit ?? (round.payout || 0) - round.betAmount;
-const finalMultiplier = (round: Round) => round.cashedOutMultiplier || round.multiplier || round.crashMultiplier || 1;
-const demoRounds: Round[] = Array.from({ length: 8 }, (_, index) => ({ roundId: `global-${index}`, state: 'FINISHED', theme: index % 2 ? 'GREEN' : 'RED', betAmount: [50, 15, 300, 75, 120, 25, 200, 40][index], boosterMultiplier: index % 3 === 0 ? 2 : 1, levels: index % 2 ? 9 : 12, level: [8, 3, 11, 5, 7, 4, 9, 6][index], multiplier: [4.2, 1.45, 12, 2.8, 3.6, 1.7, 5.4, 2.2][index], payout: index % 3 === 1 ? 0 : [210, 0, 3600, 210, 432, 0, 1080, 88][index], profit: index % 3 === 1 ? -[15, 15, 25, 25, 25, 25, 25, 25][index] : [160, -15, 3300, 135, 312, -25, 880, 48][index], points: [40, 15, 80, 32, 55, 18, 70, 28][index], popLevel: index % 3 === 1 ? [8, 3, 11, 5, 7, 4, 9, 6][index] : undefined, createdAt: new Date(Date.now() - index * 105000).toISOString(), commitment: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' }));
-function FairnessModal({ round, onClose }: { round: Round; onClose: () => void }) { return <div className="fairness-backdrop" role="presentation" onClick={onClose}><div className="fairness-modal" role="dialog" aria-modal="true" aria-labelledby="fairness-title" onClick={(event) => event.stopPropagation()}><button className="fairness-close" onClick={onClose} aria-label="Закрыть">×</button><span className="fairness-shield">🛡️</span><h2 id="fairness-title">Честность раунда</h2><p className="muted">Provably Fair · SHA-256</p><label>Хеш раунда</label><code>{round.commitment || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}</code><label>Сгенерированная точка краха</label><strong className="fairness-crash">×{(round.crashMultiplier || finalMultiplier(round)).toFixed(2)}</strong><p className="fairness-explain">Этот хеш был сформирован на сервере до старта полёта и доказывает, что результат нельзя изменить во время игры.</p></div></div>; }
-export function History() {
-  const { data = [], isLoading } = useQuery({ queryKey: ['history'], queryFn: api.history, refetchInterval: 5000, refetchIntervalInBackground: true, retry: false });
-  const [tab, setTab] = useState<'mine' | 'all'>('mine'); const [theme, setTheme] = useState<'ALL' | 'RED' | 'GREEN'>('ALL'); const [fairRound, setFairRound] = useState<Round>();
-  const mine = data; const allRounds = useMemo(() => [...mine, ...demoRounds].filter((round, index, list) => list.findIndex((item) => item.roundId === round.roundId) === index), [mine]); const rows = (tab === 'mine' ? mine : allRounds).filter((round) => theme === 'ALL' || round.theme === theme); const wins = mine.filter((round) => (round.payout || 0) > 0); const total = mine.reduce((sum, round) => sum + profitOf(round), 0); const best = mine.reduce((max, round) => Math.max(max, (round.payout || 0) > 0 ? finalMultiplier(round) : 0), 0); const red = mine.filter((round) => round.theme === 'RED').length; const green = mine.filter((round) => round.theme === 'GREEN').length;
-  return <section className="history-page"><header className="history-page-head"><div><span className="eyebrow">ПОЛЁТЫ И РЕЗУЛЬТАТЫ</span><h1>История раундов</h1><p className="muted">Разбирайте каждый полёт и проверяйте честность результата.</p></div><span className="history-live"><i /> LIVE-ЛОГ</span></header><div className="history-tabs" role="tablist"><button className={tab === 'mine' ? 'active' : ''} onClick={() => setTab('mine')} role="tab">Мои раунды</button><button className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')} role="tab">Все игроки <small>Общий пульс</small></button><label>⛃ <select value={theme} onChange={(event) => setTheme(event.target.value as typeof theme)} aria-label="Фильтр по теме"><option value="ALL">Все темы</option><option value="RED">🔴 Красный шар</option><option value="GREEN">🟢 Зелёный шар</option></select></label></div><div className="history-summary"><div><small>ВСЕГО РАУНДОВ</small><b>{mine.length}</b><span>🔴 {red}　🟢 {green}</span></div><div><small>ПРОЦЕНТ ПОБЕД</small><b>{mine.length ? `${((wins.length / mine.length) * 100).toFixed(1)}%` : '0%'}</b><span>Cashout rate · {wins.length}/{mine.length}</span></div><div><small>РЕКОРД МНОЖИТЕЛЯ</small><b>{best ? `×${best.toFixed(2)}` : '—'}</b><span>Лучший результат</span></div><div><small>ЧИСТЫЙ ДОХОД</small><b className={total >= 0 ? 'win' : 'crash'}>{total >= 0 ? '+' : ''}{number(total)} ⛃</b><span>Баланс бонусов</span></div></div>{isLoading ? <div className="card loading">Загрузка истории…</div> : <div className="history-table-new"><div className="history-table-new-head"><span>Время</span><span>Шар</span><span>Ставка / бустер</span><span>Высота</span><span>Множитель</span><span>Выплата</span><span>Очки</span><span>Награда</span><span>Честность</span></div>{rows.map((round) => { const profit = profitOf(round); const won = (round.payout || 0) > 0; return <div className="history-table-new-row" key={round.roundId}><time>{formatTime(round.createdAt)}</time><span className={`history-theme ${String(round.theme).toLowerCase()}`}>{round.theme === 'RED' ? '🔴' : '🟢'}<small>{round.theme === 'RED' ? 'Красный' : 'Зелёный'}</small></span><span><b>{round.betAmount} ⛃</b>{round.boosterMultiplier > 1 && <small className="booster">+ Бустер ×{round.boosterMultiplier}</small>}</span><span>ур. {round.level} <small>из {round.levels}</small></span><strong className={won ? 'win badge' : 'crash badge'}>×{finalMultiplier(round).toFixed(2)} <small>{won ? 'Забрал' : 'Краш'}</small></strong><b className={profit >= 0 ? 'win' : 'crash'}>{profit >= 0 ? '+' : ''}{number(profit)} ⛃</b><span className="history-points">+{round.points || 0} ⚡</span><span className="history-reward">🧩 Фрагмент #{(round.points || 0) % 6 + 1}</span><button className="fairness-button" onClick={() => setFairRound(round)}>🛡️ Проверить</button></div>; })}{!rows.length && <div className="empty"><span>🎈</span><p>История пока пуста</p><small>Сыграйте первый раунд, и он появится здесь</small><Link className="primary" to="/play">🚀 Сделать первый полёт</Link></div>}</div>}{fairRound && <FairnessModal round={fairRound} onClose={() => setFairRound(undefined)} />}</section>;
+const isWin = (round: Round) => (round.payout || 0) > 0;
+/** Выигрыш — коэффициент фиксации, проигрыш — коэффициент уровня, на котором шар лопнул. */
+const shownMultiplier = (round: Round) =>
+  isWin(round) ? round.cashedOutMultiplier || round.multiplier : round.crashMultiplier ?? round.multiplier;
+
+async function sha256Hex(text: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
-function number(value: number) { return new Intl.NumberFormat('ru-RU').format(Math.round(value)); }
+
+/** Проверка честности: сервер раскрывает зерно, а браузер сам пересчитывает хеш, опубликованный до старта. */
+function FairnessDialog({ round, onClose }: { round: Round; onClose: () => void }) {
+  const { data: proof, isLoading, isError } = useQuery({ queryKey: ['proof', round.roundId], queryFn: () => api.proof(round.roundId) });
+  const [verdict, setVerdict] = useState<Verdict>('pending');
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!proof?.seed) return;
+    if (!globalThis.crypto?.subtle) { setVerdict('unsupported'); return; }
+    let cancelled = false;
+    sha256Hex(`${proof.seed}:${proof.roundId}:${proof.configVersion}`)
+      .then((hash) => { if (!cancelled) setVerdict(`sha256:${hash}` === proof.commitment ? 'match' : 'mismatch'); })
+      .catch(() => { if (!cancelled) setVerdict('unsupported'); });
+    return () => { cancelled = true; };
+  }, [proof]);
+
+  return <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-card fairness-card" role="dialog" aria-modal="true" aria-labelledby="fairness-title" onClick={(event) => event.stopPropagation()}>
+      <div className="modal-head">
+        <div><span className="eyebrow">PROVABLY FAIR · SHA-256</span><h2 id="fairness-title">Честность раунда</h2></div>
+        <button className="modal-close" onClick={onClose} aria-label="Закрыть">×</button>
+      </div>
+
+      {isLoading ? <div className="empty"><div className="spinner" /></div>
+        : isError || !proof?.seed ? <div className="state-error">
+          <span>!</span>
+          <b>Не удалось получить доказательство</b>
+          <p className="muted">Проверка доступна владельцу раунда, пока сервер хранит раунд в истории.</p>
+        </div>
+        : <>
+          <div className={`fairness-verdict ${verdict}`}>
+            {verdict === 'match' ? '✓ Хеш совпадает — результат был зафиксирован до старта'
+              : verdict === 'mismatch' ? '✗ Хеш не совпадает с опубликованным до старта'
+              : verdict === 'unsupported' ? 'Браузер не поддерживает SHA-256 — сверьте значения вручную'
+              : 'Пересчитываем хеш…'}
+          </div>
+          <dl className="fairness-list">
+            <dt>Хеш до старта</dt><dd><code>{proof.commitment}</code></dd>
+            <dt>Раскрытое зерно</dt><dd><code>{proof.seed}</code></dd>
+            <dt>Версия настроек</dt><dd>{proof.configVersion}</dd>
+            <dt>Точка взрыва</dt><dd><b className="crash">уровень {proof.popLevel} · ×{(proof.crashMultiplier ?? shownMultiplier(round)).toFixed(2)}</b></dd>
+          </dl>
+          <p className="muted">
+            Браузер пересчитал sha256(зерно:раунд:версия) и сравнил с хешем, который сервер показал до начала полёта.
+            Шар лопается на первом уровне, где HMAC-SHA256(зерно, раунд:уровень) меньше шанса взрыва этого уровня.
+          </p>
+        </>}
+    </div>
+  </div>;
+}
+
+export function History() {
+  const [tab, setTab] = useState<Tab>('mine');
+  const [theme, setTheme] = useState<ThemeFilter>('ALL');
+  const [fairRound, setFairRound] = useState<Round>();
+  const mineQuery = useQuery({ queryKey: ['history', 'mine'], queryFn: api.myHistory, refetchInterval: 5000, refetchIntervalInBackground: true });
+  const allQuery = useQuery({ queryKey: ['history'], queryFn: api.history, refetchInterval: 5000, refetchIntervalInBackground: true, enabled: tab === 'all' });
+
+  const mine = mineQuery.data ?? [];
+  const mineIds = useMemo(() => new Set(mine.map((round) => round.roundId)), [mine]);
+  const source = tab === 'mine' ? mineQuery : allQuery;
+  const rows = (source.data ?? []).filter((round) => theme === 'ALL' || round.theme === theme);
+
+  const wins = mine.filter(isWin);
+  const total = mine.reduce((sum, round) => sum + profitOf(round), 0);
+  const best = wins.reduce((max, round) => Math.max(max, shownMultiplier(round)), 0);
+  const red = mine.filter((round) => round.theme === 'RED').length;
+
+  return <div className="play-layout">
+    <div className="section-title">
+      <div>
+        <span className="eyebrow">ПОЛЁТЫ И РЕЗУЛЬТАТЫ</span>
+        <h1>История раундов</h1>
+        <p className="muted">Разбирайте каждый полёт и проверяйте честность результата.</p>
+      </div>
+      <span className="live-pill"><i /> LIVE-ЛОГ</span>
+    </div>
+
+    <div className="leader-toolbar">
+      <div className="tabs" role="tablist">
+        <button role="tab" aria-selected={tab === 'mine'} className={tab === 'mine' ? 'active' : ''} onClick={() => setTab('mine')}>Мои раунды</button>
+        <button role="tab" aria-selected={tab === 'all'} className={tab === 'all' ? 'active' : ''} onClick={() => setTab('all')}>Все игроки <small className="muted">общий пульс</small></button>
+      </div>
+      <label className="history-filter">
+        <span className="eyebrow">ТЕМА</span>
+        <select value={theme} onChange={(event) => setTheme(event.target.value as ThemeFilter)} aria-label="Фильтр по теме">
+          <option value="ALL">Все темы</option>
+          <option value="RED">Красный шар</option>
+          <option value="GREEN">Зелёный шар</option>
+        </select>
+      </label>
+    </div>
+
+    <div className="history-summary">
+      <div><small className="eyebrow">ВСЕГО РАУНДОВ</small><b>{mine.length}</b><span className="muted">красный {red} · зелёный {mine.length - red}</span></div>
+      <div><small className="eyebrow">ПРОЦЕНТ ПОБЕД</small><b>{mine.length ? `${((wins.length / mine.length) * 100).toFixed(1)}%` : '0%'}</b><span className="muted">забрал выигрыш · {wins.length} из {mine.length}</span></div>
+      <div><small className="eyebrow">РЕКОРД МНОЖИТЕЛЯ</small><b>{best ? `×${best.toFixed(2)}` : '—'}</b><span className="muted">лучшая фиксация</span></div>
+      <div><small className="eyebrow">ЧИСТЫЙ ДОХОД</small><b className={total >= 0 ? 'win' : 'crash'}>{total >= 0 ? '+' : ''}{number(total)} ★</b><span className="muted">по вашим раундам</span></div>
+    </div>
+
+    {source.isLoading ? <div className="card"><div className="spinner" /></div>
+      : source.isError ? <div className="state-error">
+        <span>!</span>
+        <b>Не получилось загрузить историю</b>
+        <p className="muted">Проверьте соединение и попробуйте ещё раз.</p>
+        <button className="ghost" onClick={() => source.refetch()}>Повторить</button>
+      </div>
+      : <div className="table history-table">
+        <div className="table-head">
+          <span>Время</span><span>Шар</span><span>Ставка · бустер</span><span>Высота</span><span>Множитель</span>
+          <span>Выплата</span><span>Очки</span><span>Награда</span><span>Честность</span>
+        </div>
+        {rows.map((round) => {
+          const profit = profitOf(round);
+          const own = mineIds.has(round.roundId);
+          return <div className="row" key={round.roundId}>
+            <time>{formatTime(round.createdAt)}</time>
+            <span className="history-theme">
+              <img src={round.theme === 'GREEN' ? '/assets/balloon-green.png' : '/assets/balloon-red.png'} alt="" width={18} height={24} />
+              {round.theme === 'RED' ? 'Красный' : 'Зелёный'}
+            </span>
+            <span><b>{number(round.betAmount)} ★</b>{round.boosterMultiplier > 1 && <small className="history-booster">бустер ×{round.boosterMultiplier}</small>}</span>
+            <span>ур. {round.level} <small className="muted">из {round.levels}</small></span>
+            <span className={`badge ${isWin(round) ? 'save' : 'lost'}`}>×{shownMultiplier(round).toFixed(2)} · {isWin(round) ? 'забрал' : 'краш'}</span>
+            <b className={profit >= 0 ? 'win' : 'crash'}>{profit >= 0 ? '+' : ''}{number(profit)} ★</b>
+            <span className="history-points">+{round.points || 0}</span>
+            <span>{round.reward
+              ? <span className="history-reward"><img src="/assets/puzzle.png" alt="" width={18} height={18} />Фрагмент #{round.reward.fragment + 1}</span>
+              : '—'}</span>
+            <span>
+              <button
+                className="ghost fairness-button"
+                disabled={!own}
+                title={own ? 'Проверить честность раунда' : 'Проверка доступна владельцу раунда'}
+                onClick={() => setFairRound(round)}
+              >Проверить</button>
+            </span>
+          </div>;
+        })}
+        {!rows.length && <div className="empty">
+          <span>🎈</span>
+          <b>{tab === 'mine' ? 'История пока пуста' : 'Завершённых полётов пока нет'}</b>
+          <p className="muted">Сыграйте первый раунд, и он появится здесь.</p>
+          <Link className="primary" to="/play">Сделать первый полёт <span aria-hidden="true">→</span></Link>
+        </div>}
+      </div>}
+
+    {fairRound && <FairnessDialog round={fairRound} onClose={() => setFairRound(undefined)} />}
+  </div>;
+}

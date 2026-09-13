@@ -6,6 +6,7 @@ import com.example.balloon.domain.Models.Round;
 import com.example.balloon.domain.Models.RoundState;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.List;
 
@@ -24,6 +25,7 @@ public class LotteryService {
   private static final int MAX_OFFER_TICKETS = 10;
 
   private final AccountService accounts;
+  private final SecureRandom random = new SecureRandom();
 
   public LotteryService(AccountService accounts) { this.accounts = accounts; }
 
@@ -99,6 +101,42 @@ public class LotteryService {
       round.offerAccepted = true;
       return updated;
     }
+  }
+
+  /** Приз за стирание купленного билета и его вероятность. */
+  public record ScratchPrize(long amount, double chance) {}
+
+  /**
+   * Таблица призов. Средний приз 16,75 ★ меньше самой низкой цены билета (20 ★ в наборе из десяти
+   * и в предложении после выигрыша), поэтому покупка и стирание билетов не становятся бесконечным заработком.
+   */
+  public static final List<ScratchPrize> SCRATCH_PRIZES = List.of(
+      new ScratchPrize(5, 0.50),
+      new ScratchPrize(10, 0.25),
+      new ScratchPrize(25, 0.15),
+      new ScratchPrize(50, 0.08),
+      new ScratchPrize(200, 0.02));
+
+  public record ScratchResult(long prize, int tickets, long balance) {}
+
+  /** Стирает один купленный билет: приз разыгрывается и начисляется на сервере. */
+  public ScratchResult scratch(String username) {
+    long prize = drawPrize(random.nextDouble());
+    AccountEntity updated = accounts.scratchTicket(username, prize);
+    return new ScratchResult(prize, updated.getLotteryTickets(), updated.getBalance());
+  }
+
+  static long drawPrize(double roll) {
+    double accumulated = 0;
+    for (ScratchPrize prize : SCRATCH_PRIZES) {
+      accumulated += prize.chance();
+      if (roll < accumulated) return prize.amount();
+    }
+    return SCRATCH_PRIZES.get(0).amount();
+  }
+
+  public static double expectedScratchPrize() {
+    return SCRATCH_PRIZES.stream().mapToDouble(prize -> prize.amount() * prize.chance()).sum();
   }
 
   private AccountEntity purchase(String username, int tickets, long price) {

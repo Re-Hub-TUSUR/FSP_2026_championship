@@ -12,8 +12,8 @@ export interface EngineConfig {
 
 /** Зеркало Config.defaults на бэкенде: используется, когда API недоступен. */
 export const ENGINE_CONFIG: Record<Theme, EngineConfig> = {
-  RED: { levels: 12, baseHazard: 0.12, hazardGrowth: 1.115, maxHazard: 0.6, rtp: 0.96 },
-  GREEN: { levels: 9, baseHazard: 0.155, hazardGrowth: 1.12, maxHazard: 0.6, rtp: 0.96 }
+  RED: { levels: 12, baseHazard: 0.07, hazardGrowth: 1.2, maxHazard: 0.6, rtp: 0.96 },
+  GREEN: { levels: 9, baseHazard: 0.05, hazardGrowth: 1.35, maxHazard: 0.6, rtp: 0.96 }
 };
 
 /** Шанс взрыва на уровне растёт экспоненциально вместе с давлением в шаре. */
@@ -40,6 +40,12 @@ export const BOOSTER_BUDGET = 0.5;
 /** Шанс, что бустер вообще появится в раунде: сильный бустер выпадает реже. */
 export const boosterAppearChance = (booster: number) => (booster <= 1 ? 0 : Math.min(1, BOOSTER_BUDGET / (booster - 1)));
 
+/** Бустер не выпадает на первом уровне. Зеркало Config.defaultBoosterWeights. */
+export function defaultBoosterWeights(levels: number): number[] {
+  if (levels < 2) return [1];
+  return [0, ...Array(levels - 1).fill(1 / (levels - 1))];
+}
+
 /**
  * Лестница для ставки с бустером: ожидаемый вклад бустера заранее вычитается из базовых
  * коэффициентов, поэтому возврат игроку одинаков для всех вариантов ставки.
@@ -48,11 +54,11 @@ export const boosterAppearChance = (booster: number) => (booster <= 1 ? 0 : Math
 export function ladderForBooster(config: EngineConfig, booster: number): number[] {
   const base = buildLadder(config);
   if (booster <= 1) return base;
-  const share = 1 / config.levels;
+  const weights = defaultBoosterWeights(config.levels);
   const priced = [1];
   let reached = 0;
   for (let level = 1; level <= config.levels; level++) {
-    reached += share;
+    reached += weights[level - 1];
     const value = Math.round((base[level] / (1 + BOOSTER_BUDGET * reached)) * 100) / 100;
     priced.push(Math.max(priced[level - 1] + 0.01, value));
   }

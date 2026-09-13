@@ -4,14 +4,16 @@ gameId: balloon
 themes:
   RED:
     levels: 12
-    baseHazard: 0.12      # шанс взрыва шара на первом уровне
-    hazardGrowth: 1.115   # во столько раз растёт шанс взрыва с каждым уровнем
+    baseHazard: 0.07      # шанс взрыва шара на первом уровне
+    hazardGrowth: 1.20    # во столько раз растёт шанс взрыва с каждым уровнем
     maxHazard: 0.60       # потолок шанса взрыва
   GREEN:
     levels: 9
-    baseHazard: 0.155
-    hazardGrowth: 1.12
+    baseHazard: 0.05
+    hazardGrowth: 1.35
     maxHazard: 0.60
+# Бустер по умолчанию выпадает равновероятно на уровнях начиная со второго.
+# Один уровень длится 1,5 секунды (GameService.TICK_MS).
 rtp: 0.96                 # возврат игроку; коэффициент уровня = rtp / шанс долететь до уровня
 pointsPerLevel: 10
 pointsCashoutBonus: 20

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../shared/api/client';
 
 const number = (value: number) => Math.round(value).toLocaleString('ru-RU').replace(/ /g, ' ');
+const maskName = (name: string) => (name.length <= 3 ? '***' : `***${name.slice(3)}`);
 
 /** Компактный рейтинг на экране полёта: пять лучших игроков турнира. */
 export function Top5Panel() {
@@ -27,7 +28,7 @@ export function Top5Panel() {
         <img src={`/assets/medal-${index + 1}.png`} alt={`${index + 1} место`} />
         <span>
           <b className="top5-score">{number(row.points)} <img src="/assets/coin.png" alt="" width={20} height={20} /></b>
-          <small>{row.username}</small>
+          <small>{maskName(row.username)}</small>
         </span>
       </li>)}
     </ol>
